@@ -1,0 +1,99 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.35.1.
+--
+-- see: https://github.com/sol/hpack
+
+name:           surreal-db
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/githubuser/surreal-db#readme>
+homepage:       https://github.com/githubuser/surreal-db#readme
+bug-reports:    https://github.com/githubuser/surreal-db/issues
+author:         Author name here
+maintainer:     example@example.com
+copyright:      2023 Author name here
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    CHANGELOG.md
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/surreal-db
+
+library
+  exposed-modules:
+      Database.Surreal
+      Database.Surreal.WS.RPC.Types
+      Lib
+  other-modules:
+      Paths_surreal_db
+  hs-source-dirs:
+      src
+  default-extensions:
+      OverloadedLabels
+      OverloadedStrings
+      NoImplicitPrelude
+  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+  build-depends:
+      aeson
+    , base >=4.7 && <5
+    , bytestring
+    , classy-prelude
+    , containers
+    , mtl
+    , network
+    , text
+    , websockets
+  default-language: Haskell2010
+
+executable surreal-db-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_surreal_db
+  hs-source-dirs:
+      app
+  default-extensions:
+      OverloadedLabels
+      OverloadedStrings
+      NoImplicitPrelude
+  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      aeson
+    , base >=4.7 && <5
+    , bytestring
+    , classy-prelude
+    , containers
+    , mtl
+    , network
+    , surreal-db
+    , text
+    , websockets
+  default-language: Haskell2010
+
+test-suite surreal-db-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_surreal_db
+  hs-source-dirs:
+      test
+  default-extensions:
+      OverloadedLabels
+      OverloadedStrings
+      NoImplicitPrelude
+  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      aeson
+    , base >=4.7 && <5
+    , bytestring
+    , classy-prelude
+    , containers
+    , mtl
+    , network
+    , surreal-db
+    , text
+    , websockets
+  default-language: Haskell2010

@@ -1,0 +1,5 @@
+*
+!/config
+!/static
+!/_build
+!/redis.conf
