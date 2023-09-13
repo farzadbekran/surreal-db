@@ -26,7 +26,7 @@ source-repository head
 library
   exposed-modules:
       Database.Surreal
-      Database.Surreal.WS.RPC.Types
+      Database.Surreal.AST
       Lib
   other-modules:
       Paths_surreal_db
@@ -38,13 +38,17 @@ library
       NoImplicitPrelude
   ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
-      aeson
+      Decimal
+    , aeson
     , base >=4.7 && <5
     , bytestring
     , classy-prelude
     , containers
+    , first-class-families
+    , iso8601-time
     , mtl
     , network
+    , row-types
     , text
     , websockets
   default-language: Haskell2010
@@ -61,13 +65,17 @@ executable surreal-db-exe
       NoImplicitPrelude
   ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      aeson
+      Decimal
+    , aeson
     , base >=4.7 && <5
     , bytestring
     , classy-prelude
     , containers
+    , first-class-families
+    , iso8601-time
     , mtl
     , network
+    , row-types
     , surreal-db
     , text
     , websockets
@@ -86,13 +94,17 @@ test-suite surreal-db-test
       NoImplicitPrelude
   ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      aeson
+      Decimal
+    , aeson
     , base >=4.7 && <5
     , bytestring
     , classy-prelude
     , containers
+    , first-class-families
+    , iso8601-time
     , mtl
     , network
+    , row-types
     , surreal-db
     , text
     , websockets

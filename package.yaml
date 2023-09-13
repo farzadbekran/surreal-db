@@ -29,6 +29,10 @@ dependencies:
 - mtl
 - containers
 - bytestring
+- Decimal
+- row-types
+- first-class-families
+- iso8601-time
 
 ghc-options:
 - -Wall
