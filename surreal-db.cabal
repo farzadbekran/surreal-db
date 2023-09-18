@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.35.1.
+-- This file has been generated from package.yaml by hpack version 0.35.2.
 --
 -- see: https://github.com/sol/hpack
 
@@ -27,6 +27,8 @@ library
   exposed-modules:
       Database.Surreal
       Database.Surreal.AST
+      Database.Surreal.ManualTest
+      Database.Surreal.Parser
       Lib
   other-modules:
       Paths_surreal_db
@@ -36,7 +38,7 @@ library
       OverloadedLabels
       OverloadedStrings
       NoImplicitPrelude
-  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       Decimal
     , aeson
@@ -46,8 +48,10 @@ library
     , containers
     , first-class-families
     , iso8601-time
+    , megaparsec
     , mtl
     , network
+    , parser-combinators
     , row-types
     , text
     , websockets
@@ -63,7 +67,7 @@ executable surreal-db-exe
       OverloadedLabels
       OverloadedStrings
       NoImplicitPrelude
-  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       Decimal
     , aeson
@@ -73,8 +77,10 @@ executable surreal-db-exe
     , containers
     , first-class-families
     , iso8601-time
+    , megaparsec
     , mtl
     , network
+    , parser-combinators
     , row-types
     , surreal-db
     , text
@@ -92,7 +98,7 @@ test-suite surreal-db-test
       OverloadedLabels
       OverloadedStrings
       NoImplicitPrelude
-  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       Decimal
     , aeson
@@ -102,8 +108,10 @@ test-suite surreal-db-test
     , containers
     , first-class-families
     , iso8601-time
+    , megaparsec
     , mtl
     , network
+    , parser-combinators
     , row-types
     , surreal-db
     , text

@@ -1,12 +1,42 @@
-{-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE DataKinds          #-}
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE RankNTypes         #-}
+{-# LANGUAGE TypeFamilies       #-}
+{-# LANGUAGE TypeApplications   #-}
+{-# LANGUAGE TypeOperators      #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE GADTs #-}
 
 {-# OPTIONS_GHC -Wno-deriving-defaults #-}
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE TypeFamilies          #-}
 
-module Database.Surreal.AST where
+module Database.Surreal.AST (Literal (..)
+                            , Expression (..)
+                            , Exp (..)
+                            , Block (..)
+                            , SurQLLine (..)
+                            , Statement (..)
+                            , ID (..)
+                            , RecordID (..)
+                            , Array (..)
+                            , Object (..)
+                            , TableName (..)
+                            , EXPLAIN (..)
+                            , PARALLEL (..)
+                            , TIMEOUT (..)
+                            , FETCH (..)
+                            , START (..)
+                            , LIMIT (..)
+                            , ORDER (..)
+                            , OrderDirection (..)
+                            , OrderType (..)
+                            , GROUP (..)
+                            , SPLIT (..)
+                            , ONLY (..)
+                            , VALUE (..)
+                            , Fields (..)
+                            , USE (..)
+                            , Duration (..)) where
 
 import           ClassyPrelude
 import           Data.Data         ( cast )
@@ -95,16 +125,16 @@ newtype WITH
   = WITH INDEX
 
 instance ToQL WITH where
-  toQL (WITH index) = toQL index
+  toQL (WITH i) = toQL i
 
 data FROM where
   FROM :: (Maybe ONLY) -> (Exp a) -> (Maybe WITH) -> FROM
 
 instance ToQL FROM where
-  toQL (FROM mOnly exp mWith) =
+  toQL (FROM mOnly e mWith) =
     prepText [ "FROM"
              , if isJust mOnly then "ONLY" else ""
-             , toQL exp
+             , toQL e
              , renderIfJust mWith
              ]
 
@@ -166,6 +196,7 @@ data ID a where
   ObjID :: Object a -> ID (Object a)
   ArrID :: Array a -> ID [a]
 
+-- TODO: add edge selectors like ->user->likes-> etc
 data Literal a where
   NoneL :: Literal ()
   NullL :: Literal ()
@@ -259,22 +290,22 @@ instance ToQL (Exp a) where
                                     , "THEN", toQL te
                                     , "ELSE", toQL fe
                                     , "END"]
-    SelectE mValue selectors mOmit from mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain ->
-      let
-      in
-      prepText [ "SELECT"
-               , if isJust mValue then "VALUE" else ""
-               , toQL selectors
-               , renderIfJust mOmit
-               , toQL from
-               , renderIfJust mWhere
-               ]
-    _ -> error "unimplemented!"
+    _ -> error "undefined!"
+    -- SelectE mValue selectors mOmit from mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain ->
+    --   let
+    --   in
+    --   prepText [ "SELECT"
+    --            , if isJust mValue then "VALUE" else ""
+    --            , toQL selectors
+    --            , renderIfJust mOmit
+    --            , toQL from
+    --            , renderIfJust mWhere
+    --            ]
 
-test :: Exp (Var ("age2" .== Int64))
-test = SelectE Nothing
-  (FieldSelectorAs (Field @Int64 #age) #age2 :|| EmptySelectors)
-  Nothing
-  (FROM Nothing (ConstE "users") Nothing)
-  (Just (WHERE (OPE (FNName ">") (ConstE "age") (LitE (Int64L 18)) :: Exp Bool)))
-  Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+-- test :: Exp (Var ("age2" .== Int64))
+-- test = SelectE Nothing
+--   (FieldSelectorAs (Field @Int64 #age) #age2 :|| EmptySelectors)
+--   Nothing
+--   (FROM Nothing (ConstE "users") Nothing)
+--   (Just (WHERE (OPE (FNName ">") (ConstE "age") (LitE (Int64L 18)) :: Exp Bool)))
+--   Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing

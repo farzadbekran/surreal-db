@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE RecordWildCards       #-}
 
@@ -75,7 +76,7 @@ data Error
       { code    :: Int
       , message :: Text
       }
-  deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
+  deriving (Eq, Generic, FromJSON, Read, Show, ToJSON)
 
 data ConnectionInfo
   = ConnectionInfo
