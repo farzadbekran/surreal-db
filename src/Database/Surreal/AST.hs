@@ -1,112 +1,74 @@
-{-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE DeriveAnyClass     #-}
-{-# LANGUAGE LambdaCase         #-}
-{-# LANGUAGE RankNTypes         #-}
-{-# LANGUAGE TypeFamilies       #-}
-{-# LANGUAGE TypeApplications   #-}
-{-# LANGUAGE TypeOperators      #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE LambdaCase    #-}
 
 {-# OPTIONS_GHC -Wno-deriving-defaults #-}
 
-module Database.Surreal.AST (Literal (..)
-                            , Expression (..)
-                            , Exp (..)
-                            , Block (..)
-                            , SurQLLine (..)
-                            , Statement (..)
-                            , ID (..)
-                            , RecordID (..)
-                            , Array (..)
-                            , Object (..)
-                            , TableName (..)
-                            , EXPLAIN (..)
-                            , PARALLEL (..)
-                            , TIMEOUT (..)
-                            , FETCH (..)
-                            , START (..)
-                            , LIMIT (..)
-                            , ORDER (..)
-                            , OrderDirection (..)
-                            , OrderType (..)
-                            , GROUP (..)
-                            , SPLIT (..)
-                            , ONLY (..)
-                            , VALUE (..)
-                            , Fields (..)
-                            , USE (..)
-                            , Duration (..)) where
+module Database.Surreal.AST where
 
 import           ClassyPrelude
-import           Data.Data         ( cast )
 import           Data.Decimal
-import           Data.Kind         ( Type )
-import           Data.Row
 import qualified Data.Text         as T
 import           Data.Time.ISO8601 ( formatISO8601 )
-import           GHC.TypeLits      ( symbolVal )
 
 newtype FNName
   = FNName Text
+  deriving (Eq, Generic, Read, Show)
 
-type NameSpace = Text
-type DataBase = Text
+type Namespace = Text
+type Database = Text
 
 data USE
-  = USE NameSpace DataBase
-  | USE_NS NameSpace
-  | USE_DB DataBase
+  = USE Namespace Database
+  | USE_NS Namespace
+  | USE_DB Database
+  deriving (Eq, Generic, Read, Show)
 
-newtype Param a
+newtype Param
   = Param Text
+  deriving (Eq, Generic, Read, Show)
 
-data Field l a where
-  Field :: forall a l. (KnownSymbol l) => Label l -> Field l a
+newtype Field
+  = Field Text
+  deriving (Eq, Generic, Read, Show)
 
-data Selector l (r :: Row Type) where
-  FieldSelector :: Field l a -> Selector l (l .== a)
-  ExpSelector :: (KnownSymbol l) => Exp e -> Label l -> Selector l (l .== e)
-  FieldSelectorAs :: (KnownSymbol l') => Field l r -> Label l' -> Selector l (l' .== e)
+instance ToQL Field where
+  toQL (Field t) = t
 
-instance ToQL (Selector l r) where
+data Selector
+  = FieldSelector Field
+  | ExpSelector Exp Field
+  | FieldSelectorAs Field Text
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL Selector where
   toQL = \case
-    FieldSelector (Field l) -> prepText [pack $ symbolVal l]
-    ExpSelector e l ->
-      prepText [ toQL e
-               , "AS"
-               , pack $ symbolVal l]
-    FieldSelectorAs (Field l) l' ->
-      prepText [ pack $ symbolVal l
-               , "AS"
-               , pack $ symbolVal l']
+    FieldSelector (Field f) -> prepText [f]
+    ExpSelector e (Field f) ->
+      prepText [ toQL e, "AS", f ]
+    FieldSelectorAs (Field f) t ->
+      prepText [ f, "AS", t ]
 
-data Fields (r :: Row Type) where
-  EmptyFields :: Fields Empty
-  (:|) :: Field l a -> Fields r -> Fields (l .== a .+ r)
+newtype Selectors
+  = Selectors [Selector]
+  deriving (Eq, Generic, Read, Show)
 
-data Selectors (r :: Row Type) where
-  EmptySelectors :: Selectors Empty
-  (:||) :: Selector l r1 -> Selectors r2 -> Selectors (r1 .+ r2)
-
-instance ToQL (Selectors r) where
-  toQL = \case
-    EmptySelectors -> ""
-    s :|| ss ->
-      toQL s
-      <> case toQL ss of
-           "" -> ""
-           t  -> "," <> t
+instance ToQL Selectors where
+  toQL (Selectors []) = ""
+  toQL (Selectors ss) = prepText $ intersperse "," $ map toQL ss
 
 data VALUE = VALUE
+  deriving (Eq, Generic, Read, Show)
 
-data OMIT (a :: Row Type) where
-  OMIT :: Selectors r -> OMIT r
+newtype OMIT
+  = OMIT [Field]
+  deriving (Eq, Generic, Read, Show)
 
-instance ToQL (OMIT r) where
-  toQL (OMIT sels) = toQL sels
+instance ToQL OMIT where
+  toQL (OMIT []) = ""
+  toQL (OMIT fs) = prepText $ intersperse "," $ map toQL fs
 
 data ONLY = ONLY
+  deriving (Eq, Generic, Read, Show)
 
 type IndexName = Text -- do we need to improve this?
 
@@ -116,6 +78,7 @@ instance ToQL Text where
 data INDEX
   = NOINDEX
   | INDEX [IndexName]
+  deriving (Eq, Generic, Read, Show)
 
 instance ToQL INDEX where
   toQL NOINDEX    = "NOINDEX"
@@ -123,12 +86,14 @@ instance ToQL INDEX where
 
 newtype WITH
   = WITH INDEX
+  deriving (Eq, Generic, Read, Show)
 
 instance ToQL WITH where
   toQL (WITH i) = toQL i
 
-data FROM where
-  FROM :: (Maybe ONLY) -> (Exp a) -> (Maybe WITH) -> FROM
+data FROM
+  = FROM (Maybe ONLY) Exp (Maybe WITH)
+  deriving (Eq, Generic, Read, Show)
 
 instance ToQL FROM where
   toQL (FROM mOnly e mWith) =
@@ -139,120 +104,122 @@ instance ToQL FROM where
              ]
 
 newtype WHERE
-  = WHERE (Exp Bool)
+  = WHERE Exp
+  deriving (Eq, Generic, Read, Show)
 
 instance ToQL WHERE where
   toQL (WHERE e) = prepText ["WHERE", toQL e]
 
-data SPLIT where
-  SPLIT :: Selectors r -> SPLIT
+newtype SPLIT
+  = SPLIT [Field]
+  deriving (Eq, Generic, Read, Show)
 
-data GROUP where
-  GROUP :: Selectors r -> GROUP
+newtype GROUP
+  = GROUP [Field]
+  deriving (Eq, Generic, Read, Show)
 
 data OrderType = RAND | COLLATE | NUMERIC
+  deriving (Eq, Generic, Read, Show)
 
 data OrderDirection = ASC | DESC
+  deriving (Eq, Generic, Read, Show)
 
-data ORDER where
-  ORDER :: [(Field l a, Maybe OrderType, Maybe OrderDirection)] -> ORDER
+newtype ORDER
+  = ORDER [(Field, Maybe OrderType, Maybe OrderDirection)]
+  deriving (Eq, Generic, Read, Show)
 
 newtype LIMIT
   = LIMIT Int64
+  deriving (Eq, Generic, Read, Show)
 
 newtype START
   = START Int64
+  deriving (Eq, Generic, Read, Show)
 
-data FETCH where
-  FETCH :: Selectors r -> FETCH
+newtype FETCH
+  = FETCH [Field]
+  deriving (Eq, Generic, Read, Show)
 
 newtype TIMEOUT
   = TIMEOUT Int64
+  deriving (Eq, Generic, Read, Show)
 
 data PARALLEL = PARALLEL
+  deriving (Eq, Generic, Read, Show)
 
 data EXPLAIN = EXPLAIN | EXPLAINFULL
+  deriving (Eq, Generic, Read, Show)
 
 newtype Duration
   = Duration Text
-  -- ^ need to improve this to support formats like '1h3m13s' etc
+  deriving (Eq, Generic, Read, Show)
 
 newtype TableName
   = TableName Text
+  deriving (Eq, Generic, Read, Show)
 
-data Object (a :: Row Type) where
-  (:=) :: Label l -> Exp a -> Object (l .== a)
-  (:+) :: Object a -> Object b -> Object (a .+ b)
+newtype Object
+  = Object [(Field, Exp)]
+  deriving (Eq, Generic, Read, Show)
 
-newtype Array a
-  = Array [Exp a]
+data RecordID
+  = RecordID TableName ID
+  deriving (Eq, Generic, Read, Show)
 
-data RecordID a where
-  RecordID :: TableName -> ID a -> RecordID a
-
-data ID a where
-  TextID :: Text -> ID Text
-  NumID :: Int64 -> ID Int64
-  ObjID :: Object a -> ID (Object a)
-  ArrID :: Array a -> ID [a]
+data ID
+  = TextID Text
+  | NumID Int64
+  | ObjID Object
+  | TupID [Exp]
+  deriving (Eq, Generic, Read, Show)
 
 -- TODO: add edge selectors like ->user->likes-> etc
-data Literal a where
-  NoneL :: Literal ()
-  NullL :: Literal ()
-  BoolL :: Bool -> Literal Bool
-  TextL :: Text -> Literal Text
-  Int64L :: Int64 -> Literal Int64
-  DecimalL :: Decimal -> Literal Decimal
-  FloatL :: Float -> Literal Float
-  DateTimeL :: UTCTime -> Literal UTCTime
-  DurationL :: Duration -> Literal Duration
-  ObjectL :: Object a -> Literal (Object a)
-  ArrayL :: Array a -> Literal [a]
-  RecordIDL :: RecordID a -> Literal (RecordID a)
-  FutureL :: Exp a -> Literal a
+data Literal
+  = NoneL
+  | NullL
+  | BoolL Bool
+  | TextL Text
+  | Int64L Int64
+  | DecimalL Decimal
+  | FloatL Float
+  | DateTimeL UTCTime
+  | DurationL Duration
+  | ObjectL Object
+  | ArrayL [Exp]
+  | RecordIDL RecordID
+  | FutureL Exp
+  deriving (Eq, Generic, Read, Show)
 
-data SomeExpression
-  = forall e. (Expression e, ToQL e) => SomeExpression e
+data Exp
+  = OPE FNName Exp Exp
+  | AppE FNName [Exp]
+  | LitE Literal
+  | ConstE Text
+  | ParamE Param
+  | IfThenE Exp Exp
+  | IfThenElseE Exp Exp Exp
+  | SelectE (Maybe VALUE) Selectors (Maybe OMIT) FROM (Maybe WHERE) (Maybe SPLIT) (Maybe GROUP) (Maybe ORDER) (Maybe LIMIT) (Maybe START) (Maybe FETCH) (Maybe TIMEOUT) (Maybe PARALLEL) (Maybe EXPLAIN)
+  deriving (Eq, Generic, Read, Show)
 
-instance ToQL SomeExpression where
-  toQL (SomeExpression e) = toQL e
+data Statement
+  = UseS USE
+  | LetS Param Exp
+  | BeginS
+  | CancelS
+  | CommitS
+  | BreakS
+  | ContinueS
+  | ForS Param Exp Block
+  deriving (Eq, Generic, Read, Show)
 
-class (Typeable e, ToQL e) => Expression e where
-  toExpression :: e -> SomeExpression
-  toExpression = SomeExpression
-  fromExpression :: SomeExpression -> Maybe e
-  fromExpression (SomeExpression e) = cast e
+data SurQLLine
+  = ExpLine Exp
+  | StatementLine Statement
+  deriving (Eq, Generic, Read, Show)
 
-data Exp (a :: Type) where
-  OPE :: FNName -> Exp a -> Exp b -> Exp c
-  AppE :: FNName -> [SomeExpression] -> Exp a
-  LitE :: Literal a -> Exp a
-  ConstE :: Text -> Exp a
-  ParamE :: Param a -> Exp a
-  IfThenE :: Exp Bool -> Exp a -> Exp a
-  IfThenElseE :: Exp Bool -> Exp a -> Exp a -> Exp a
-  SelectE :: (Maybe VALUE) -> Selectors r -> (Maybe (OMIT r)) -> FROM -> (Maybe WHERE) -> (Maybe SPLIT) -> (Maybe GROUP) -> (Maybe ORDER) -> (Maybe LIMIT) -> (Maybe START) -> (Maybe FETCH) -> (Maybe TIMEOUT) -> (Maybe PARALLEL) -> Maybe EXPLAIN -> Exp (Var r)
-
-deriving instance Typeable (Exp e)
-instance Typeable e => Expression (Exp e)
-
-data Statement where
-  UseS :: USE -> Statement
-  LetS :: Param a -> Exp a -> Statement
-  BeginS :: Statement
-  CancelS :: Statement
-  CommitS :: Statement
-  BreakS :: Statement
-  ContinueS :: Statement
-  ForS :: Param a -> Exp a -> Block -> Statement
-
-data SurQLLine where
-  ExpLine :: Exp a -> SurQLLine
-  StatementLine :: Statement -> SurQLLine
-
-data Block where
-  Block :: [SurQLLine] -> Block
+newtype Block
+  = Block [SurQLLine]
+  deriving (Eq, Generic, Read, Show)
 
 prepText :: [Text] -> Text
 prepText ts = T.replace "  " " " ((unwords . map T.strip) ts)
@@ -260,7 +227,7 @@ prepText ts = T.replace "  " " " ((unwords . map T.strip) ts)
 class ToQL a where
   toQL :: a -> Text
 
-instance ToQL (Literal a) where
+instance ToQL Literal where
   toQL = \case
     NoneL -> "NONE"
     NullL -> "Null"
@@ -276,7 +243,7 @@ instance ToQL (Literal a) where
 renderIfJust :: ToQL p => Maybe p -> Text
 renderIfJust = maybe "" toQL
 
-instance ToQL (Exp a) where
+instance ToQL Exp where
   toQL = \case
     OPE (FNName fnName) e1 e2 -> prepText [toQL e1, fnName, toQL e2]
     AppE (FNName fnName) ps -> prepText $ [fnName <> "("] <> intersperse ", " (map toQL ps) <> [")"]
@@ -291,21 +258,21 @@ instance ToQL (Exp a) where
                                     , "ELSE", toQL fe
                                     , "END"]
     _ -> error "undefined!"
-    -- SelectE mValue selectors mOmit from mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain ->
-    --   let
-    --   in
-    --   prepText [ "SELECT"
-    --            , if isJust mValue then "VALUE" else ""
-    --            , toQL selectors
-    --            , renderIfJust mOmit
-    --            , toQL from
-    --            , renderIfJust mWhere
-    --            ]
+--     SelectE mValue selectors mOmit from mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain ->
+--       let
+--       in
+--       prepText [ "SELECT"
+--                , if isJust mValue then "VALUE" else ""
+--                , toQL selectors
+--                , renderIfJust mOmit
+--                , toQL from
+--                , renderIfJust mWhere
+--                ]
 
--- test :: Exp (Var ("age2" .== Int64))
+-- test :: Exp
 -- test = SelectE Nothing
---   (FieldSelectorAs (Field @Int64 #age) #age2 :|| EmptySelectors)
+--   (Selectors [FieldSelectorAs (Field "age") "age2"])
 --   Nothing
 --   (FROM Nothing (ConstE "users") Nothing)
---   (Just (WHERE (OPE (FNName ">") (ConstE "age") (LitE (Int64L 18)) :: Exp Bool)))
+--   (Just (WHERE (OPE (FNName ">") (ConstE "age") (LitE (Int64L 18)))))
 --   Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
