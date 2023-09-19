@@ -14,6 +14,86 @@ newtype FNName
   = FNName Text
   deriving (Eq, Generic, Read, Show)
 
+data Operator
+  = (:&&)
+  | (:||)
+  | (:??)
+  | (:?:)
+  | (:=)
+  | (:!=)
+  | (:==)
+  | (:?=)
+  | (:*=)
+  | (:~)
+  | (:!~)
+  | (:?~)
+  | (:*~)
+  | (:<)
+  | (:<=)
+  | (:>)
+  | (:>=)
+  | (:+)
+  | (:-)
+  | (:*)
+  | (:/)
+  | (:**)
+  | IN
+  | NOTIN
+  | CONTAINS
+  | CONTAINSNOT
+  | CONTAINSALL
+  | CONTAINSANY
+  | CONTAINSNONE
+  | INSIDE
+  | NOTINSIDE
+  | ALLINSIDE
+  | ANYINSIDE
+  | NONEINSIDE
+  | OUTSIDE
+  | INTERSECTS
+  | (:@@)
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL Operator where
+  toQL = \case
+    (:&&) -> "&&"
+    (:||) -> "||"
+    (:??) -> "??"
+    (:?:) -> "?:"
+    (:=) -> "="
+    (:!=) -> "!="
+    (:==) -> "=="
+    (:?=) -> "?="
+    (:*=) -> "*="
+    (:~) -> ":~"
+    (:!~) -> "!~"
+    (:?~) -> "?~"
+    (:*~) -> "*~"
+    (:<) -> "<"
+    (:<=) -> "<="
+    (:>) -> ">"
+    (:>=) -> ">="
+    (:+) -> "+"
+    (:-) -> "-"
+    (:*) -> "*"
+    (:/) -> "/"
+    (:**) -> "**"
+    IN -> "IN"
+    NOTIN -> "NOTIN"
+    CONTAINS -> "CONTAINS"
+    CONTAINSNOT -> "CONTAINSNOT"
+    CONTAINSALL -> "CONTAINSALL"
+    CONTAINSANY -> "CONTAINSANY"
+    CONTAINSNONE -> "CONTAINSNONE"
+    INSIDE -> "INSIDE"
+    NOTINSIDE -> "NOTINSIDE"
+    ALLINSIDE -> "ALLINSIDE"
+    ANYINSIDE -> "ANYINSIDE"
+    NONEINSIDE -> "NONEINSIDE"
+    OUTSIDE -> "OUTSIDE"
+    INTERSECTS -> "INTERSECTS"
+    (:@@) -> "@@"
+
 type Namespace = Text
 type Database = Text
 
@@ -37,7 +117,7 @@ instance ToQL Field where
 data Selector
   = FieldSelector Field
   | ExpSelector Exp Field
-  | FieldSelectorAs Field Text
+  | FieldSelectorAs Field Field
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Selector where
@@ -45,8 +125,8 @@ instance ToQL Selector where
     FieldSelector (Field f) -> prepText [f]
     ExpSelector e (Field f) ->
       prepText [ toQL e, "AS", f ]
-    FieldSelectorAs (Field f) t ->
-      prepText [ f, "AS", t ]
+    FieldSelectorAs (Field f) (Field fAs) ->
+      prepText [ f, "AS", fAs ]
 
 newtype Selectors
   = Selectors [Selector]
@@ -191,7 +271,7 @@ data Literal
   deriving (Eq, Generic, Read, Show)
 
 data Exp
-  = OPE FNName Exp Exp
+  = OPE Operator Exp Exp
   | AppE FNName [Exp]
   | LitE Literal
   | ConstE Text
@@ -245,7 +325,7 @@ renderIfJust = maybe "" toQL
 
 instance ToQL Exp where
   toQL = \case
-    OPE (FNName fnName) e1 e2 -> prepText [toQL e1, fnName, toQL e2]
+    OPE op e1 e2 -> prepText [toQL e1, toQL op, toQL e2]
     AppE (FNName fnName) ps -> prepText $ [fnName <> "("] <> intersperse ", " (map toQL ps) <> [")"]
     LitE le -> toQL le
     ConstE t -> t
