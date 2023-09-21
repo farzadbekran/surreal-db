@@ -12,7 +12,10 @@ module Database.Surreal.Parser where
 import           ClassyPrelude                  hiding ( bool, exp, group,
                                                   index, some, timeout, try )
 import qualified Control.Monad.Combinators.Expr as E
+import           Control.Monad.Fail             ( MonadFail (..) )
 import qualified Data.Char                      as C
+import           Data.Foldable                  ( foldl )
+import           Data.Time.ISO8601              ( parseISO8601 )
 import           Data.Void
 import           Database.Surreal.AST
 import           Text.Megaparsec
@@ -57,34 +60,73 @@ boolL = label "Bool" $ lexeme $ BoolL False <$ symbol "False" <|> BoolL False <$
 textL :: Parser Literal
 textL = label "Text" $ lexeme $ TextL . pack <$> between (char '"') (char '"') (takeWhileP Nothing (/= '"'))
 
-int64L :: Parser Literal
-int64L = label "Int64" $ lexeme $ read <$> some numberChar <&> Int64L
+intParser :: Parser Int64
+intParser = label "Int64" $ do
+  s <- some numberChar
+  let mr = readMay s :: Maybe Int64
+    in
+    case mr of
+      Just r -> return r
+      _      -> fail "Invalid Int64"
 
-decimalL :: Parser Literal
-decimalL = label "Decimal" $ lexeme $ read <$> some numberChar <&> DecimalL
+floatParser :: Parser Float
+floatParser = label "Float" $ do
+  s <- some numberChar <> symbol "." <> some numberChar
+  let mr = readMay s :: Maybe Float
+    in
+    case mr of
+      Just r -> return r
+      _      -> fail "Invalid Float"
+
+int64L :: Parser Literal
+int64L = label "Int64L" $ lexeme $ Int64L <$> L.signed sc intParser
 
 floatL :: Parser Literal
-floatL = label "Float" $ lexeme $ read <$> some numberChar <&> FloatL
+floatL = label "FloatL" $ lexeme $ FloatL <$> L.signed sc floatParser
 
--- | TODO: this needs fixing
 dateTimeL :: Parser Literal
-dateTimeL = label "UTCTime" $ lexeme $ read <$> some numberChar <&> DateTimeL
+dateTimeL = label "UTCTime" $ lexeme $ do
+  s <- someTill asciiChar (char 'Z')
+  let mUTC = parseISO8601 $ s <> "Z"
+  case mUTC of
+    Just utc -> return $ DateTimeL utc
+    _        -> fail "Invalid ISO8601 DateTime"
 
--- | TODO: this needs fixing
 durationL :: Parser Literal
-durationL = label "Duration" $ lexeme $ some alphaNumChar <&> DurationL . Duration . pack
+durationL = label "Duration" $ lexeme $ do
+  let
+    tags = ["y", "w", "d", "h", "m", "s", "ms", "us", "ns"]
+    partParser = do
+      intPart <- intParser
+      tagPart <- choice $ map string tags
+      return (intPart, tagPart)
+  parts <- some partParser
+  let duration = foldl (\dur (i, t) -> case t of
+                           "y"  -> dur { y = y dur + i}
+                           "w"  -> dur { w = w dur + i}
+                           "d"  -> dur { d = d dur + i}
+                           "h"  -> dur { h = h dur + i}
+                           "m"  -> dur { m = m dur + i}
+                           "s"  -> dur { s = s dur + i}
+                           "ms" -> dur { ms = ms dur + i}
+                           "us" -> dur { us = us dur + i}
+                           "ns" -> dur { ns = ns dur + i}
+                           _    -> dur
+                       )
+                 defaultDuration parts
+  return $ DurationL duration
 
+-- | TODO: add missing types like object
 literal :: Parser Literal
-literal = lexeme $ maybeBetweenParens $ choice
+literal = lexeme $ maybeBetweenParens $ choice $ map try
   [ noneL
   , nullL
   , boolL
-  , textL
-  , int64L
-  , decimalL
-  , floatL
   , dateTimeL
   , durationL
+  , floatL
+  , textL
+  , int64L
   ]
 
 field :: Parser Field
@@ -139,17 +181,18 @@ expSelector = label "ExpSelector" $ lexeme $ do
 fieldSelectorAs :: Parser Selector
 fieldSelectorAs = label "FieldSelectorAs" $ lexeme $ do
   f <- field
+  _ <- caseInsensitiveSymbol "AS"
   FieldSelectorAs f <$> field
 
 selector :: Parser Selector
-selector = label "Selector" $ lexeme $ choice
-  [ fieldSelector
+selector = lexeme $ choice $ map try
+  [ fieldSelectorAs
+  , fieldSelector
   , expSelector
-  , fieldSelectorAs
   ]
 
 selectors :: Parser Selectors
-selectors = label "[Selector]" $ lexeme $ Selectors <$> sepBy selector (lexeme $ char ',')
+selectors = lexeme $ Selectors <$> sepBy selector (lexeme $ char ',')
 
 omit :: Parser OMIT
 omit = label "OMIT" $ lexeme $ do
@@ -262,9 +305,45 @@ selectE = label "SelectE" $ lexeme $ do
   return $ SelectE mValue sels mOmit from_ mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain
   -- return $ SelectE mValue sels Nothing from_ Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
+-- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
-operatorTable = [ [ E.InfixL (symbol "*" $> OPE (:*))
-                  , E.InfixL (symbol ">" $> OPE (:>))
+operatorTable = [ [ E.InfixN (symbol "&&" $> OPE (:&&))
+                  , E.InfixN (symbol "**" $> OPE (:**))
+                  , E.InfixN (symbol "||" $> OPE (:||))
+                  , E.InfixN (symbol "??" $> OPE (:??))
+                  , E.InfixN (symbol "?:" $> OPE (:?:))
+                  , E.InfixN (symbol "==" $> OPE (:==))
+                  , E.InfixN (symbol "!=" $> OPE (:!=))
+                  , E.InfixN (symbol "?=" $> OPE (:?=))
+                  , E.InfixN (symbol "*=" $> OPE (:*=))
+                  , E.InfixN (symbol "!~" $> OPE (:!~))
+                  , E.InfixN (symbol "?~" $> OPE (:?~))
+                  , E.InfixN (symbol "*~" $> OPE (:*~))
+                  , E.InfixN (symbol "<=" $> OPE (:<=))
+                  , E.InfixN (symbol ">=" $> OPE (:>=))
+                  , E.InfixN (symbol ">" $> OPE (:>))
+                  , E.InfixN (symbol "+" $> OPE (:+))
+                  , E.InfixN (symbol "-" $> OPE (:-))
+                  , E.InfixN (symbol "*" $> OPE (:*))
+                  , E.InfixN (symbol "/" $> OPE (:/))
+                  , E.InfixN (symbol "<" $> OPE (:<))
+                  , E.InfixN (symbol "=" $> OPE (:=))
+                  , E.InfixN (symbol "~" $> OPE (:~))
+                  , E.InfixN (symbol "IN" $> OPE IN)
+                  , E.InfixN (symbol "NOTIN" $> OPE NOTIN)
+                  , E.InfixN (symbol "CONTAINSNOT" $> OPE CONTAINSNOT)
+                  , E.InfixN (symbol "CONTAINSALL" $> OPE CONTAINSALL)
+                  , E.InfixN (symbol "CONTAINSANY" $> OPE CONTAINSANY)
+                  , E.InfixN (symbol "CONTAINSNONE" $> OPE CONTAINSNONE)
+                  , E.InfixN (symbol "CONTAINS" $> OPE CONTAINS)
+                  , E.InfixN (symbol "INSIDE" $> OPE INSIDE)
+                  , E.InfixN (symbol "NOTINSIDE" $> OPE NOTINSIDE)
+                  , E.InfixN (symbol "ALLINSIDE" $> OPE ALLINSIDE)
+                  , E.InfixN (symbol "ANYINSIDE" $> OPE ANYINSIDE)
+                  , E.InfixN (symbol "NONEINSIDE" $> OPE NONEINSIDE)
+                  , E.InfixN (symbol "OUTSIDE" $> OPE OUTSIDE)
+                  , E.InfixN (symbol "INTERSECTS" $> OPE INTERSECTS)
+                  , E.InfixN (symbol "@@" $> OPE (:@@))
                   ] ]
 
 exp :: Parser Exp

@@ -2,11 +2,11 @@
 {-# LANGUAGE LambdaCase    #-}
 
 {-# OPTIONS_GHC -Wno-deriving-defaults #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Database.Surreal.AST where
 
 import           ClassyPrelude
-import           Data.Decimal
 import qualified Data.Text         as T
 import           Data.Time.ISO8601 ( formatISO8601 )
 
@@ -230,9 +230,22 @@ data PARALLEL = PARALLEL
 data EXPLAIN = EXPLAIN | EXPLAINFULL
   deriving (Eq, Generic, Read, Show)
 
-newtype Duration
-  = Duration Text
+-- | duration formats like "1y2w3d", seuureal db currently does not support months
+data Duration
+  = Duration { y :: Int64
+             , w :: Int64
+             , d :: Int64
+             , h :: Int64
+             , m :: Int64
+             , s :: Int64
+             , ms :: Int64
+             , us :: Int64
+             , ns :: Int64
+             }
   deriving (Eq, Generic, Read, Show)
+
+defaultDuration :: Duration
+defaultDuration = Duration 0 0 0 0 0 0 0 0 0
 
 newtype TableName
   = TableName Text
@@ -260,7 +273,6 @@ data Literal
   | BoolL Bool
   | TextL Text
   | Int64L Int64
-  | DecimalL Decimal
   | FloatL Float
   | DateTimeL UTCTime
   | DurationL Duration
@@ -314,10 +326,10 @@ instance ToQL Literal where
     BoolL b -> if b then "true" else "false"
     TextL t -> t
     Int64L i64 -> (pack . show) i64
-    DecimalL d -> (pack . show) d
     FloatL f -> (pack . show) f
     DateTimeL dt -> pack $ formatISO8601 dt
-    DurationL (Duration d) -> d
+    DurationL (Duration { .. }) -> let frmt i l = if i > 0 then (pack . show) i <> l else "" in
+      frmt y "y" <> frmt w "w" <> frmt d "d" <> frmt h "h" <> frmt m "m" <> frmt s "s" <> frmt ms "ms" <> frmt us "us" <> frmt ns "ns"
     _ -> "unimplemented!"
 
 renderIfJust :: ToQL p => Maybe p -> Text
