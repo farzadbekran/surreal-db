@@ -3,10 +3,11 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE RecordWildCards       #-}
 
-module Database.Surreal
+module Database.Surreal.WS.RPC.Surreal
     ( ConnectionInfo (..)
     , QueryResult (..)
     , Response (..)
+    , Error (..)
     , app
     , connect
     , defaultConnectionInfo

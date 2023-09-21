@@ -1,9 +1,6 @@
-{-# LANGUAGE DataKinds      #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE LambdaCase     #-}
-{-# LANGUAGE RankNTypes     #-}
-{-# LANGUAGE TypeFamilies   #-}
-{-# LANGUAGE TypeOperators  #-}
+{-# LANGUAGE DataKinds    #-}
+{-# LANGUAGE RankNTypes   #-}
+{-# LANGUAGE TypeFamilies #-}
 
 {-# OPTIONS_GHC -Wno-deriving-defaults #-}
 
@@ -13,7 +10,7 @@ import           ClassyPrelude                  hiding ( bool, exp, group,
                                                   index, some, timeout, try )
 import qualified Control.Monad.Combinators.Expr as E
 import           Control.Monad.Fail             ( MonadFail (..) )
-import qualified Data.Char                      as C
+import           Data.Char                      ( isAlphaNum, isAlpha )
 import           Data.Foldable                  ( foldl )
 import           Data.Time.ISO8601              ( parseISO8601 )
 import           Data.Void
@@ -102,15 +99,15 @@ durationL = label "Duration" $ lexeme $ do
       return (intPart, tagPart)
   parts <- some partParser
   let duration = foldl (\dur (i, t) -> case t of
-                           "y"  -> dur { y = y dur + i}
-                           "w"  -> dur { w = w dur + i}
-                           "d"  -> dur { d = d dur + i}
-                           "h"  -> dur { h = h dur + i}
-                           "m"  -> dur { m = m dur + i}
-                           "s"  -> dur { s = s dur + i}
-                           "ms" -> dur { ms = ms dur + i}
-                           "us" -> dur { us = us dur + i}
-                           "ns" -> dur { ns = ns dur + i}
+                           "y"  -> dur { _y = _y dur + i}
+                           "w"  -> dur { _w = _w dur + i}
+                           "d"  -> dur { _d = _d dur + i}
+                           "h"  -> dur { _h = _h dur + i}
+                           "m"  -> dur { _m = _m dur + i}
+                           "s"  -> dur { _s = _s dur + i}
+                           "ms" -> dur { _ms = _ms dur + i}
+                           "us" -> dur { _us = _us dur + i}
+                           "ns" -> dur { _ns = _ns dur + i}
                            _    -> dur
                        )
                  defaultDuration parts
@@ -130,10 +127,33 @@ literal = lexeme $ maybeBetweenParens $ choice $ map try
   ]
 
 field :: Parser Field
-field = label "Field" $ lexeme $ some alphaNumChar <&> Field . pack
+field = label "Field" $ lexeme $ do
+  parts <- sepBy partParser (symbol ".")
+  if null parts
+    then fail "Invalid function name."
+    else
+      return $ Field $ pack $ intercalate "." parts
+  where
+    partParser = do
+      initial <- satisfy isAlpha
+      rest <- some $ satisfy isValidIdentifierChar
+      return $ initial : rest
+
+isValidIdentifierChar :: Char -> Bool
+isValidIdentifierChar c = isAlphaNum c || c == '_'
 
 fnName :: Parser FNName
-fnName = label "FNName" $ lexeme $ (some (satisfy C.isAlpha) <> some alphaNumChar) <&> FNName . pack
+fnName = label "FNName" $ lexeme $ do
+  parts <- sepBy partParser (symbol "::")
+  if null parts
+    then fail "Invalid function name."
+    else
+      return $ FNName $ pack $ intercalate "::" parts
+  where
+    partParser = do
+      initial <- satisfy isAlpha
+      rest <- some $ satisfy isValidIdentifierChar
+      return $ initial : rest
 
 appE :: Parser Exp
 appE = label "AppE" $ lexeme $ do
@@ -186,9 +206,9 @@ fieldSelectorAs = label "FieldSelectorAs" $ lexeme $ do
 
 selector :: Parser Selector
 selector = lexeme $ choice $ map try
-  [ fieldSelectorAs
+  [ expSelector
+  , fieldSelectorAs
   , fieldSelector
-  , expSelector
   ]
 
 selectors :: Parser Selectors
@@ -305,9 +325,15 @@ selectE = label "SelectE" $ lexeme $ do
   return $ SelectE mValue sels mOmit from_ mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain
   -- return $ SelectE mValue sels Nothing from_ Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
+typedE :: Parser (Exp -> Exp -> Exp)
+typedE = do
+  _ <- lexeme $ symbol "::"
+  return (\e t -> TypedE e $ toQL t)
+
 -- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
-operatorTable = [ [ E.InfixN (symbol "&&" $> OPE (:&&))
+operatorTable = [ [ E.InfixN typedE
+                  , E.InfixN (symbol "&&" $> OPE (:&&))
                   , E.InfixN (symbol "**" $> OPE (:**))
                   , E.InfixN (symbol "||" $> OPE (:||))
                   , E.InfixN (symbol "??" $> OPE (:??))

@@ -232,15 +232,15 @@ data EXPLAIN = EXPLAIN | EXPLAINFULL
 
 -- | duration formats like "1y2w3d", seuureal db currently does not support months
 data Duration
-  = Duration { y :: Int64
-             , w :: Int64
-             , d :: Int64
-             , h :: Int64
-             , m :: Int64
-             , s :: Int64
-             , ms :: Int64
-             , us :: Int64
-             , ns :: Int64
+  = Duration { _y :: Int64
+             , _w :: Int64
+             , _d :: Int64
+             , _h :: Int64
+             , _m :: Int64
+             , _s :: Int64
+             , _ms :: Int64
+             , _us :: Int64
+             , _ns :: Int64
              }
   deriving (Eq, Generic, Read, Show)
 
@@ -283,7 +283,8 @@ data Literal
   deriving (Eq, Generic, Read, Show)
 
 data Exp
-  = OPE Operator Exp Exp
+  = TypedE Exp Text
+  | OPE Operator Exp Exp
   | AppE FNName [Exp]
   | LitE Literal
   | ConstE Text
@@ -328,8 +329,17 @@ instance ToQL Literal where
     Int64L i64 -> (pack . show) i64
     FloatL f -> (pack . show) f
     DateTimeL dt -> pack $ formatISO8601 dt
-    DurationL (Duration { .. }) -> let frmt i l = if i > 0 then (pack . show) i <> l else "" in
-      frmt y "y" <> frmt w "w" <> frmt d "d" <> frmt h "h" <> frmt m "m" <> frmt s "s" <> frmt ms "ms" <> frmt us "us" <> frmt ns "ns"
+    DurationL (Duration { .. }) ->
+      let frmt i l = if i > 0 then (pack . show) i <> l else "" in
+      frmt _y "y"
+      <> frmt _w "w"
+      <> frmt _d "d"
+      <> frmt _h "h"
+      <> frmt _m "m"
+      <> frmt _s "s"
+      <> frmt _ms "ms"
+      <> frmt _us "us"
+      <> frmt _ns "ns"
     _ -> "unimplemented!"
 
 renderIfJust :: ToQL p => Maybe p -> Text
@@ -337,6 +347,7 @@ renderIfJust = maybe "" toQL
 
 instance ToQL Exp where
   toQL = \case
+    TypedE e _ -> toQL e
     OPE op e1 e2 -> prepText [toQL e1, toQL op, toQL e2]
     AppE (FNName fnName) ps -> prepText $ [fnName <> "("] <> intersperse ", " (map toQL ps) <> [")"]
     LitE le -> toQL le
@@ -349,17 +360,17 @@ instance ToQL Exp where
                                     , "THEN", toQL te
                                     , "ELSE", toQL fe
                                     , "END"]
-    _ -> error "undefined!"
---     SelectE mValue selectors mOmit from mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain ->
---       let
---       in
---       prepText [ "SELECT"
---                , if isJust mValue then "VALUE" else ""
---                , toQL selectors
---                , renderIfJust mOmit
---                , toQL from
---                , renderIfJust mWhere
---                ]
+    SelectE mValue selectors mOmit from mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain ->
+      let
+      in
+      prepText [ "SELECT"
+               , if isJust mValue then "VALUE" else ""
+               , toQL selectors
+               , renderIfJust mOmit
+               , toQL from
+               , renderIfJust mWhere
+               ]
+    --_ -> error "expression toQL undefined!"
 
 -- test :: Exp
 -- test = SelectE Nothing
