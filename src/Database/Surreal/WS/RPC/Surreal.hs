@@ -7,7 +7,7 @@
 module Database.Surreal.WS.RPC.Surreal where
 
 import           ClassyPrelude        hiding ( error, id )
-import           Control.Concurrent   ( ThreadId, forkIO, threadDelay )
+import           Control.Concurrent   ( ThreadId, forkIO, threadDelay, myThreadId )
 import           Control.Exception    ( throw )
 import           Data.Aeson           ( FromJSON, ToJSON, Value, decode,
                                         encode )
@@ -49,13 +49,13 @@ data Response
       }
   deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
 
--- data QueryResult
---   = QueryResult
---       { result :: Maybe Value
---       , status :: Text
---       , time   :: Text
---       }
---   deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
+data QueryResult
+  = QueryResult
+      { result :: Maybe Value
+      , status :: Text
+      , time   :: Text
+      }
+  deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
 
 data Error
   = Error
@@ -79,13 +79,15 @@ defaultConnectionInfo :: ConnectionInfo
 defaultConnectionInfo = ConnectionInfo "0.0.0.0" 8000 "root" "root" "test" "test"
 
 {- |
-starts a thread to listen to the connection and write responses to the
-response map. return the threds ID
+listens to the connection and writes responses to the
+response map.
 -}
-app :: MVar WS.Connection -> TVar (Map Int (MVar Response)) -> WS.ClientApp ThreadId
-app connMvar respMap connection = do
+app :: MVar WS.Connection -> MVar ThreadId -> TVar (Map Int (MVar Response)) -> WS.ClientApp ()
+app connMvar threadIDMvar respMap connection = do
   putMVar connMvar connection
-  forkIO $ forever $ do
+  tid <- myThreadId
+  putMVar threadIDMvar tid
+  forever $ do
     msg <- WS.receiveData connection
     let rsp = decode msg :: Maybe Response
     case rsp of
@@ -99,9 +101,11 @@ app connMvar respMap connection = do
 connect :: MonadIO m => ConnectionInfo -> m ConnectionState
 connect ConnectionInfo { .. } = do
   connMVar <- newEmptyMVar
+  threadIDMVar <- newEmptyMVar
   respTVar <- newTVarIO M.empty
-  tid <- liftIO $ withSocketsDo $ WS.runClient url port "/rpc" (app connMVar respTVar)
+  _ <- liftIO $ forkIO $ withSocketsDo $ WS.runClient url port "/rpc" (app connMVar threadIDMVar respTVar)
   conn <- readMVar connMVar
+  tid <- readMVar threadIDMVar
   reqIDTvar <- newTVarIO 0
   let connectionState = ConnectionState conn reqIDTvar respTVar tid
   -- TODO: signin before returning

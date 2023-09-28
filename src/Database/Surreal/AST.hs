@@ -118,15 +118,17 @@ data Selector
   = FieldSelector Field
   | ExpSelector Exp Field
   | FieldSelectorAs Field Field
+  | TypedSelector Selector Text
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Selector where
   toQL = \case
-    FieldSelector (Field f) -> prepText [f]
+    FieldSelector (Field f) -> prepText [f] -- TODO: remove this to prevent untyped selectors?
     ExpSelector e (Field f) ->
       prepText [ toQL e, "AS", f ]
     FieldSelectorAs (Field f) (Field fAs) ->
       prepText [ f, "AS", fAs ]
+    TypedSelector s _ -> toQL s
 
 newtype Selectors
   = Selectors [Selector]

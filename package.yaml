@@ -37,6 +37,7 @@ dependencies:
 - megaparsec
 - parser-combinators
 - template-haskell
+- profunctors
 
 ghc-options:
 - -Wall
