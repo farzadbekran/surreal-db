@@ -10,7 +10,7 @@ import           ClassyPrelude        hiding ( error, id )
 import           Control.Concurrent   ( ThreadId, forkIO, threadDelay, myThreadId )
 import           Control.Exception    ( throw )
 import           Data.Aeson           ( FromJSON, ToJSON, Value, decode,
-                                        encode )
+                                        encode, (.=), object )
 import qualified Data.ByteString.Lazy as BL
 import           Data.Map.Strict      as M
 import           Network.Socket       ( withSocketsDo )
@@ -31,6 +31,7 @@ data NetworkException
   = NotConnected
   | InvalidResponse Text
   | RequestTimeout Request
+  | SigninError (Maybe Error)
   deriving (Exception, Show)
 
 data Request
@@ -108,8 +109,14 @@ connect ConnectionInfo { .. } = do
   tid <- readMVar threadIDMVar
   reqIDTvar <- newTVarIO 0
   let connectionState = ConnectionState conn reqIDTvar respTVar tid
-  -- TODO: signin before returning
-  return connectionState
+  signinRes <- runSurreal connectionState $ send "signin"
+    [object [ "user" .= user
+            , "pass" .= pass
+            , "ns" .= ns
+            , "db" .= db]]
+  if isNothing (error signinRes)
+    then return connectionState
+    else throw $ SigninError (error signinRes)
 
 getNextRequestID :: Surreal Int
 getNextRequestID = do

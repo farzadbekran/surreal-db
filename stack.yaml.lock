@@ -3,7 +3,20 @@
 # For more information, please see the documentation at:
 #   https://docs.haskellstack.org/en/stable/lock_files
 
-packages: []
+packages:
+- completed:
+    commit: 535993c6b1c96ff1c8f32c30b55da674c8824396
+    git: https://github.com/dwincort/row-types.git
+    name: row-types-aeson
+    pantry-tree:
+      sha256: 93b9dedf432c7fa7d5073dc263a606e869df5386f322795d190dff2ce52cdf56
+      size: 374
+    subdir: aeson
+    version: 1.1.0.0
+  original:
+    commit: 535993c6b1c96ff1c8f32c30b55da674c8824396
+    git: https://github.com/dwincort/row-types.git
+    subdir: aeson
 snapshots:
 - completed:
     sha256: 9313df78f49519315342f4c51ffc5da12659d3735f8ac3c54a1fb98ff874474e

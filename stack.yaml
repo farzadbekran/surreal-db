@@ -43,6 +43,11 @@ packages:
 #- git: https://github.com/haskell/haskell-language-server.git
 #  commit: b30f4b6cf5822f3112c35d14a0cba51f3fe23b85
 
+extra-deps:
+- git: https://github.com/dwincort/row-types.git
+  commit: 535993c6b1c96ff1c8f32c30b55da674c8824396
+  subdirs:
+  - aeson
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

@@ -6,7 +6,7 @@
 
 module Database.Surreal.Parser where
 
-import           ClassyPrelude                  hiding ( bool, exp, group,
+import           ClassyPrelude                  hiding (many, bool, exp, group,
                                                   index, some, timeout, try )
 import qualified Control.Monad.Combinators.Expr as E
 import           Control.Monad.Fail             ( MonadFail (..) )
@@ -189,6 +189,29 @@ ifThenElseE = label "IfThenElseE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "ELSE"
   IfThenElseE e1 e2 <$> exp
 
+parseCapitalWord :: Parser String
+parseCapitalWord = lexeme $ do
+  initialLetter <- upperChar
+  rest <- some alphaNumChar
+  return $ initialLetter : rest
+
+typeCon :: Parser TypeDef
+typeCon = do
+  w <- try $ lexeme parseCapitalWord
+  return $ T w []
+
+simpleType :: Parser TypeDef
+simpleType = do
+  prefix <- try $ lexeme parseCapitalWord
+  postfix <- many
+    $ try
+    $ lexeme
+    $ between (char '(') (char ')') simpleType <|> typeCon
+  return $ T prefix postfix
+
+parseType :: Parser TypeDef
+parseType = lexeme $ maybeBetweenParens simpleType
+
 fieldSelector :: Parser Selector
 fieldSelector = label "FieldSelector" $ FieldSelector <$> field
 
@@ -204,8 +227,22 @@ fieldSelectorAs = label "FieldSelectorAs" $ lexeme $ do
   _ <- caseInsensitiveSymbol "AS"
   FieldSelectorAs f <$> field
 
+typedSelector :: Parser (Selector -> Selector)
+typedSelector = do
+  _ <- lexeme $ symbol "::"
+  t <- parseType
+  return (`TypedSelector` t)
+
+-- order matters here, more specific first, ie ** before *
+selectorOperatorTable :: [[E.Operator Parser Selector]]
+selectorOperatorTable = [ [ E.Postfix typedSelector
+                          ] ]
+
 selector :: Parser Selector
-selector = lexeme $ choice $ map try
+selector = E.makeExprParser selectorTerm selectorOperatorTable
+
+selectorTerm :: Parser Selector
+selectorTerm = lexeme $ choice $ map try
   [ expSelector
   , fieldSelectorAs
   , fieldSelector
@@ -323,17 +360,10 @@ selectE = label "SelectE" $ lexeme $ do
   mParallel <- optional parallel
   mExplain <- optional explain
   return $ SelectE mValue sels mOmit from_ mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain
-  -- return $ SelectE mValue sels Nothing from_ Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
-
-typedE :: Parser (Exp -> Exp -> Exp)
-typedE = do
-  _ <- lexeme $ symbol "::"
-  return (\e t -> TypedE e $ toQL t)
 
 -- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
-operatorTable = [ [ E.InfixN typedE
-                  , E.InfixN (symbol "&&" $> OPE (:&&))
+operatorTable = [ [ E.InfixN (symbol "&&" $> OPE (:&&))
                   , E.InfixN (symbol "**" $> OPE (:**))
                   , E.InfixN (symbol "||" $> OPE (:||))
                   , E.InfixN (symbol "??" $> OPE (:??))

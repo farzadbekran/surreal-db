@@ -97,6 +97,9 @@ instance ToQL Operator where
 type Namespace = Text
 type Database = Text
 
+data TypeDef = T String [ TypeDef ]
+  deriving (Eq, Generic, Read, Show)
+
 data USE
   = USE Namespace Database
   | USE_NS Namespace
@@ -118,7 +121,7 @@ data Selector
   = FieldSelector Field
   | ExpSelector Exp Field
   | FieldSelectorAs Field Field
-  | TypedSelector Selector Text
+  | TypedSelector Selector TypeDef
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Selector where
@@ -284,8 +287,9 @@ data Literal
   | FutureL Exp
   deriving (Eq, Generic, Read, Show)
 
+-- TODO: add typed input
 data Exp
-  = TypedE Exp Text
+  = TypedE Exp TypeDef
   | OPE Operator Exp Exp
   | AppE FNName [Exp]
   | LitE Literal

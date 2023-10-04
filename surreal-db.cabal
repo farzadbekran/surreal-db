@@ -55,6 +55,7 @@ library
     , parser-combinators
     , profunctors
     , row-types
+    , row-types-aeson
     , template-haskell
     , text
     , time
@@ -87,6 +88,7 @@ executable surreal-db-exe
     , parser-combinators
     , profunctors
     , row-types
+    , row-types-aeson
     , surreal-db
     , template-haskell
     , text
@@ -121,6 +123,7 @@ test-suite surreal-db-test
     , parser-combinators
     , profunctors
     , row-types
+    , row-types-aeson
     , surreal-db
     , template-haskell
     , text
