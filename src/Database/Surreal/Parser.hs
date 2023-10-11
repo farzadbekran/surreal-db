@@ -22,6 +22,7 @@ import           Text.Read                      ( read )
 
 type Parser = Parsec Void String
 
+-- | Consumes whitespace and newlines
 sc :: Parser ()
 sc = L.space space1 (L.skipLineComment "--") (L.skipBlockComment "{-" "-}")
 
@@ -406,16 +407,17 @@ exp :: Parser Exp
 exp = E.makeExprParser term operatorTable
 
 term :: Parser Exp
-term = lexeme $ choice
-  [ paramE
-  , ifThenE
-  , ifThenElseE
-  , selectE
-  , try appE
-  , try litE
-  , try constE
-  , betweenParens exp
-  ]
+term = sc
+  >> lexeme (choice
+              [ paramE
+              , ifThenE
+              , ifThenElseE
+              , selectE
+              , try appE
+              , try litE
+              , try constE
+              , betweenParens exp
+              ])
 
 -- object :: Parser (Object a)
 -- object = label "Object" $ do

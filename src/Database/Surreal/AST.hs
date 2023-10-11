@@ -117,6 +117,7 @@ newtype Field
 instance ToQL Field where
   toQL (Field t) = t
 
+-- TODO: add edge selectors like ->user->likes-> etc
 data Selector
   = FieldSelector Field
   | ExpSelector Exp Field
@@ -144,13 +145,16 @@ instance ToQL Selectors where
 data VALUE = VALUE
   deriving (Eq, Generic, Read, Show)
 
+instance ToQL VALUE where
+  toQL VALUE = "VALUE"
+
 newtype OMIT
   = OMIT [Field]
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL OMIT where
   toQL (OMIT []) = ""
-  toQL (OMIT fs) = prepText $ intersperse "," $ map toQL fs
+  toQL (OMIT fs) = prepText $ ["OMIT"] <> intersperse "," (map toQL fs)
 
 data ONLY = ONLY
   deriving (Eq, Generic, Read, Show)
@@ -199,41 +203,87 @@ newtype SPLIT
   = SPLIT [Field]
   deriving (Eq, Generic, Read, Show)
 
+instance ToQL SPLIT where
+  toQL (SPLIT []) = ""
+  toQL (SPLIT fs) = prepText $ ["SPLIT"] <> intersperse "," (map toQL fs)
+
 newtype GROUP
   = GROUP [Field]
   deriving (Eq, Generic, Read, Show)
 
+instance ToQL GROUP where
+  toQL (GROUP []) = ""
+  toQL (GROUP fs) = prepText $ ["GROUP BY"] <> intersperse "," (map toQL fs)
+
 data OrderType = RAND | COLLATE | NUMERIC
   deriving (Eq, Generic, Read, Show)
 
+instance ToQL OrderType where
+  toQL = \case
+    RAND -> "RAND"
+    COLLATE -> "COLLATE"
+    NUMERIC -> "NUMERIC"
+
 data OrderDirection = ASC | DESC
   deriving (Eq, Generic, Read, Show)
+
+instance ToQL OrderDirection where
+  toQL = \case
+    ASC -> "ASC"
+    DESC -> "DESC"
 
 newtype ORDER
   = ORDER [(Field, Maybe OrderType, Maybe OrderDirection)]
   deriving (Eq, Generic, Read, Show)
 
+instance ToQL ORDER where
+  toQL (ORDER []) = ""
+  toQL (ORDER fs) = prepText $ ["ORDER BY"] <> intersperse "," (map renderOrder fs)
+    where
+      renderOrder (f, mOrderType, mOrderDirection) =
+        prepText [ toQL f, renderIfJust mOrderType, renderIfJust mOrderDirection ]
+
 newtype LIMIT
   = LIMIT Int64
   deriving (Eq, Generic, Read, Show)
+
+instance ToQL LIMIT where
+  toQL (LIMIT i) = "LIMIT " <> tshow i
 
 newtype START
   = START Int64
   deriving (Eq, Generic, Read, Show)
 
+instance ToQL START where
+  toQL (START i) = "START " <> tshow i
+
 newtype FETCH
   = FETCH [Field]
   deriving (Eq, Generic, Read, Show)
+
+instance ToQL FETCH where
+  toQL (FETCH []) = ""
+  toQL (FETCH fs) = prepText $ ["FETCH"] <> intersperse "," (map toQL fs)
 
 newtype TIMEOUT
   = TIMEOUT Int64
   deriving (Eq, Generic, Read, Show)
 
+instance ToQL TIMEOUT where
+  toQL (TIMEOUT i) = "TIMEOUT " <> tshow i
+
 data PARALLEL = PARALLEL
   deriving (Eq, Generic, Read, Show)
 
+instance ToQL PARALLEL where
+  toQL PARALLEL = "PARALLEL"
+
 data EXPLAIN = EXPLAIN | EXPLAINFULL
   deriving (Eq, Generic, Read, Show)
+
+instance ToQL EXPLAIN where
+  toQL EXPLAIN = "EXPLAIN"
+  toQL EXPLAINFULL = "EXPLAINFULL"
 
 -- | duration formats like "1y2w3d", seuureal db currently does not support months
 data Duration
@@ -271,7 +321,6 @@ data ID
   | TupID [Exp]
   deriving (Eq, Generic, Read, Show)
 
--- TODO: add edge selectors like ->user->likes-> etc
 data Literal
   = NoneL
   | NullL
@@ -367,14 +416,21 @@ instance ToQL Exp where
                                     , "ELSE", toQL fe
                                     , "END"]
     SelectE mValue selectors mOmit from mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain ->
-      let
-      in
       prepText [ "SELECT"
-               , if isJust mValue then "VALUE" else ""
+               , renderIfJust mValue
                , toQL selectors
                , renderIfJust mOmit
                , toQL from
                , renderIfJust mWhere
+               , renderIfJust mSplit
+               , renderIfJust mGroup
+               , renderIfJust mOrder
+               , renderIfJust mLimit
+               , renderIfJust mStart
+               , renderIfJust mFetch
+               , renderIfJust mTimeout
+               , renderIfJust mParallel
+               , renderIfJust mExplain
                ]
     --_ -> error "expression toQL undefined!"
 

@@ -8,12 +8,13 @@
 {-# LANGUAGE NoImplicitPrelude          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeApplications           #-}
 
 module Database.Surreal.TH where
 
 import           ClassyPrelude                   as P hiding ( exp, lift )
 import           Control.Monad.Fail
-import           Data.Aeson
+import           Data.Aeson as Aeson
 import           Data.Row.Records
 import qualified Database.Surreal.AST            as AST
 import           Database.Surreal.Parser
@@ -23,19 +24,25 @@ import           Language.Haskell.TH.Quote
 import           Language.Haskell.TH.Syntax
 import           Text.Megaparsec                 hiding ( Label )
 import Data.Foldable
+import qualified Data.Vector as V
 
 data Encoder a
   = Encoder (a -> Value)
   | EmptyEncoder
 newtype Decoder a
-  = Decoder (Value -> a)
+  = Decoder (Value -> Surreal a)
+
+newtype DecodeError = DecodeError String
+  deriving (Show, Exception)
 
 reEncode :: (b -> a) -> Encoder a -> Encoder b
 reEncode f (Encoder a)  = Encoder (a . f)
 reEncode _ EmptyEncoder = EmptyEncoder
 
-reDecode :: (a -> b) -> Decoder a -> Decoder b
-reDecode f (Decoder a) = Decoder (f . a)
+reDecode :: (a -> Surreal b) -> Decoder a -> Decoder b
+reDecode f (Decoder a) = Decoder (\r -> do
+                                     r1 <- a r
+                                     f r1)
 
 -- | The type used by TH to parse SurrealQL
 data Query input output
@@ -60,7 +67,19 @@ getResultDecoders :: AST.Exp -> Q Exp
 getResultDecoders = \case
   AST.SelectE _ (AST.Selectors ss) _ _ _ _ _ _ _ _ _ _ _ _ -> do
     types <- mapM getSelectorRowType ss
-    AppE (ConE 'Decoder) . AppTypeE (VarE 'fromJSON) <$> [t| Rec $(return $ foldr1 combineToRowTypeDef types)|]
+    let rowType = foldr1 combineToRowTypeDef types
+    [| Decoder (\case
+                   Array o -> (\case
+                                  (Object r) -> case r !? "result" of
+                                    Just r1 -> do
+                                      case fromJSON @[Rec $(return rowType)] r1 of
+                                        Aeson.Success r2 -> return r2
+                                        Aeson.Error e -> P.throwIO $ DecodeError e
+                                    Nothing -> P.throwIO $ DecodeError "Select Decoder: missing result key in object!"
+                                  v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: " <> show v)
+                              (V.head o)
+                   v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: expecting array but got: " <> (pack $ show v)
+               ) |]
   _ -> fail "unimplemented decoder!"
 
 -- | converts `AST.TypeDef` to TH type definition AST
@@ -101,12 +120,13 @@ parseQuery s = do
     Right ast -> [| Query $(lift $ AST.toQL ast) EmptyEncoder $(getResultDecoders ast) |]
     Left e    -> fail $ errorBundlePretty e
 
-runQuery :: input -> Query input output -> Surreal (Either RPC.Error output)
+runQuery :: input -> Query input output -> Surreal output
 runQuery _ (Query q _ (Decoder decoder)) = do
   RPC.Response { RPC.result = result, RPC.error = err } <- RPC.send "query" [String q]
+  --print result
   case err of
-    Just e  -> return $ Left e
-    Nothing -> return $ Right $ decoder $ fromMaybe Null result
+    Just e  -> P.throwIO e
+    Nothing -> decoder $ fromMaybe Null result
 
 -- signIn :: MonadUnliftIO m => Text -> Text -> m (Either RPC.Error ())
 -- signIn user pass = do

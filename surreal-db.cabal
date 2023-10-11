@@ -59,6 +59,7 @@ library
     , template-haskell
     , text
     , time
+    , vector
     , websockets
   default-language: Haskell2010
 
@@ -93,6 +94,7 @@ executable surreal-db-exe
     , template-haskell
     , text
     , time
+    , vector
     , websockets
   default-language: Haskell2010
 
@@ -128,5 +130,6 @@ test-suite surreal-db-test
     , template-haskell
     , text
     , time
+    , vector
     , websockets
   default-language: Haskell2010

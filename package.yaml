@@ -39,6 +39,7 @@ dependencies:
 - parser-combinators
 - template-haskell
 - profunctors
+- vector
 
 ghc-options:
 - -Wall

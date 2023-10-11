@@ -63,7 +63,7 @@ data Error
       { code    :: Int
       , message :: Text
       }
-  deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
+  deriving (Eq, FromJSON, Generic, Read, Show, ToJSON, Exception)
 
 data ConnectionInfo
   = ConnectionInfo
