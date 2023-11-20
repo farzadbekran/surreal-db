@@ -110,28 +110,46 @@ newtype Param
   = Param Text
   deriving (Eq, Generic, Read, Show)
 
-newtype Field
-  = Field Text
+data Field
+  = SimpleField Text -- ^ name
+  | IndexedField Field [Literal] -- ^ address[0]
+  | FilteredField Field WHERE -- ^ (address WHERE city = "New York")
+  | CompositeField Field Field -- ^ address.city
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Field where
-  toQL (Field t) = t
+  toQL (SimpleField t) = t
+  toQL (IndexedField t is) = prepText $ [toQL t] <> concatMap (\i -> ["[", toQL i, "]"]) is
+  toQL (FilteredField f w) = prepText ["(", toQL f, toQL w, ")"]
+  toQL (CompositeField f1 f2) = prepText [toQL f1, ".", toQL f2]
+
+data Edge
+  = OutEdge Field -- ^ ->bought
+  | InEdge Field -- ^ <-bought
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL Edge where
+  toQL (OutEdge f) = prepText [ "->", toQL f ]
+  toQL (InEdge f) = prepText [ "<-", toQL f ]
 
 -- TODO: add edge selectors like ->user->likes-> etc
 data Selector
   = FieldSelector Field
   | ExpSelector Exp Field
   | FieldSelectorAs Field Field
+  | EdgeSelector (Maybe Field) [Edge] -- ^ f1->f2<-f3 or ->f2<-f3
   | TypedSelector Selector TypeDef
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Selector where
   toQL = \case
-    FieldSelector (Field f) -> prepText [f] -- TODO: remove this to prevent untyped selectors?
-    ExpSelector e (Field f) ->
-      prepText [ toQL e, "AS", f ]
-    FieldSelectorAs (Field f) (Field fAs) ->
-      prepText [ f, "AS", fAs ]
+    FieldSelector f -> prepText [toQL f] -- TODO: remove this to prevent untyped selectors?
+    ExpSelector e f ->
+      prepText [ toQL e, "AS", toQL f ]
+    FieldSelectorAs f fAs ->
+      prepText [ toQL f, "AS", toQL fAs ]
+    EdgeSelector mf es ->
+      prepText $ maybe "" toQL mf : map toQL es
     TypedSelector s _ -> toQL s
 
 newtype Selectors

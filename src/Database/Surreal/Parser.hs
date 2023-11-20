@@ -6,11 +6,12 @@
 
 module Database.Surreal.Parser where
 
-import           ClassyPrelude                  hiding (many, bool, exp, group,
-                                                  index, some, timeout, try )
+import           ClassyPrelude                  hiding ( bool, exp, group,
+                                                  index, many, some, timeout,
+                                                  try )
 import qualified Control.Monad.Combinators.Expr as E
 import           Control.Monad.Fail             ( MonadFail (..) )
-import           Data.Char                      ( isAlphaNum, isAlpha )
+import           Data.Char                      ( isAlpha, isAlphaNum )
 import           Data.Foldable                  ( foldl )
 import           Data.Time.ISO8601              ( parseISO8601 )
 import           Data.Void
@@ -127,18 +128,39 @@ literal = lexeme $ maybeBetweenParens $ choice $ map try
   , int64L
   ]
 
-field :: Parser Field
-field = label "Field" $ lexeme $ do
-  parts <- sepBy partParser (symbol ".")
-  if null parts
-    then fail "Invalid function name."
+simpleField :: Parser Field
+simpleField = label "SimpleField" $ lexeme $ do
+  initial <- satisfy isAlpha
+  rest <- some $ satisfy isValidIdentifierChar
+  return $ SimpleField $ pack $ initial : rest
+
+indexedField :: Parser (Field -> Field)
+indexedField = label "IndexedField" $ lexeme $ do
+  is <- many $ between (char '[') (char ']') literal
+  if null is
+    then
+    fail "Empty index!"
     else
-      return $ Field $ pack $ intercalate "." parts
-  where
-    partParser = do
-      initial <- satisfy isAlpha
-      rest <- some $ satisfy isValidIdentifierChar
-      return $ initial : rest
+    return (`IndexedField` is)
+
+filteredField :: Parser Field
+filteredField = label "FilteredField" $ lexeme $ betweenParens $ do
+  f <- simpleField
+  FilteredField f <$> where_
+
+fieldOperatorTable :: [[E.Operator Parser Field]]
+fieldOperatorTable = [ [ E.Postfix indexedField
+                       , E.InfixL (symbol "." $> CompositeField)
+                       ] ]
+
+field :: Parser Field
+field = E.makeExprParser fieldTerm fieldOperatorTable
+
+fieldTerm :: Parser Field
+fieldTerm = lexeme $ choice $ map try
+  [ filteredField
+  , simpleField
+  ]
 
 isValidIdentifierChar :: Char -> Bool
 isValidIdentifierChar c = isAlphaNum c || c == '_'
@@ -213,6 +235,27 @@ simpleType = do
 parseType :: Parser TypeDef
 parseType = lexeme $ maybeBetweenParens simpleType
 
+outEdge :: Parser Edge
+outEdge = label "OutEdge" $ lexeme $ do
+  _ <- symbol "->"
+  OutEdge <$> field
+
+inEdge :: Parser Edge
+inEdge = label "InEdge" $ lexeme $ do
+  _ <- symbol "<-"
+  InEdge <$> field
+
+edge :: Parser Edge
+edge = label "Edge" $ lexeme $ choice [outEdge, inEdge]
+
+edgeSelector :: Parser Selector
+edgeSelector = label "EdgeSelector" $ lexeme $ do
+  mInitialField <- optional field
+  edges <- some edge
+  if null edges
+    then fail "Invalid Edge!"
+    else return $ EdgeSelector mInitialField edges
+
 fieldSelector :: Parser Selector
 fieldSelector = label "FieldSelector" $ FieldSelector <$> field
 
@@ -245,6 +288,7 @@ selector = E.makeExprParser selectorTerm selectorOperatorTable
 selectorTerm :: Parser Selector
 selectorTerm = lexeme $ choice $ map try
   [ expSelector
+  , edgeSelector
   , fieldSelectorAs
   , fieldSelector
   ]
