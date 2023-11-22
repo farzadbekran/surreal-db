@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Database.Surreal.ManualTest where
 
@@ -14,6 +15,9 @@ import           Data.Aeson.KeyMap
 import           Database.Surreal.TH
 import           Database.Surreal.WS.RPC.Surreal as RPC
 import           Data.Row.Aeson ()
+import           Data.Row
+
+type TestRecType = Rec ("category" .== Text)
 
 test :: IO ()
 test = do
@@ -21,11 +25,11 @@ test = do
   res <- RPC.runSurreal connState $ do
     let q@(Query t _ _) =
           [query|
-                select first_name :: Text,
-                       last_name :: Text
+                select id :: Text,
+                       ->create->product AS cat :: (Vector TestRecType)
                 from artist
-                order by first_name DESC
-                limit 1
+                limit 2
+                fetch cat
                 |]
     print t
     runQuery () q

@@ -29,6 +29,7 @@ library
       Database.Surreal.ManualTest
       Database.Surreal.Parser
       Database.Surreal.TH
+      Database.Surreal.TypeHandler
       Database.Surreal.WS.RPC.Surreal
       Lib
   other-modules:

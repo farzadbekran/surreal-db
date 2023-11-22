@@ -252,9 +252,11 @@ edgeSelector :: Parser Selector
 edgeSelector = label "EdgeSelector" $ lexeme $ do
   mInitialField <- optional field
   edges <- some edge
+  _ <- caseInsensitiveSymbol "AS"
+  f <- field
   if null edges
     then fail "Invalid Edge!"
-    else return $ EdgeSelector mInitialField edges
+    else return $ EdgeSelector mInitialField edges f
 
 fieldSelector :: Parser Selector
 fieldSelector = label "FieldSelector" $ FieldSelector <$> field
@@ -263,13 +265,13 @@ expSelector :: Parser Selector
 expSelector = label "ExpSelector" $ lexeme $ do
   e <- exp
   _ <- caseInsensitiveSymbol "AS"
-  ExpSelector e <$> field
+  ExpSelector e <$> simpleField
 
-fieldSelectorAs :: Parser Selector
-fieldSelectorAs = label "FieldSelectorAs" $ lexeme $ do
-  f <- field
+selectorAs :: Parser (Selector -> Selector)
+selectorAs = label "SelectorAs" $ lexeme $ do
   _ <- caseInsensitiveSymbol "AS"
-  FieldSelectorAs f <$> field
+  f <- simpleField
+  return (`SelectorAs` f)
 
 typedSelector :: Parser (Selector -> Selector)
 typedSelector = do
@@ -279,18 +281,20 @@ typedSelector = do
 
 -- order matters here, more specific first, ie ** before *
 selectorOperatorTable :: [[E.Operator Parser Selector]]
-selectorOperatorTable = [ [ E.Postfix typedSelector
-                          ] ]
+selectorOperatorTable = [ [ E.Postfix selectorAs
+                          ]
+                        , [ E.Postfix typedSelector
+                          ]
+                        ]
 
 selector :: Parser Selector
 selector = E.makeExprParser selectorTerm selectorOperatorTable
 
 selectorTerm :: Parser Selector
 selectorTerm = lexeme $ choice $ map try
-  [ expSelector
+  [ fieldSelector
+  , expSelector
   , edgeSelector
-  , fieldSelectorAs
-  , fieldSelector
   ]
 
 selectors :: Parser Selectors

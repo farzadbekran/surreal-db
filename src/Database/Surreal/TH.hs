@@ -1,7 +1,6 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DuplicateRecordFields      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -14,8 +13,10 @@ module Database.Surreal.TH where
 
 import           ClassyPrelude                   as P hiding ( exp, lift )
 import           Control.Monad.Fail
-import           Data.Aeson as Aeson
+import           Data.Aeson                      as Aeson
+import           Data.Foldable
 import           Data.Row.Records
+import qualified Data.Vector                     as V
 import qualified Database.Surreal.AST            as AST
 import           Database.Surreal.Parser
 import           Database.Surreal.WS.RPC.Surreal as RPC
@@ -23,8 +24,6 @@ import           Language.Haskell.TH
 import           Language.Haskell.TH.Quote
 import           Language.Haskell.TH.Syntax
 import           Text.Megaparsec                 hiding ( Label )
-import Data.Foldable
-import qualified Data.Vector as V
 
 data Encoder a
   = Encoder (a -> Value)
@@ -32,8 +31,9 @@ data Encoder a
 newtype Decoder a
   = Decoder (Value -> Surreal a)
 
-newtype DecodeError = DecodeError String
-  deriving (Show, Exception)
+newtype DecodeError
+  = DecodeError String
+  deriving (Exception, Show)
 
 reEncode :: (b -> a) -> Encoder a -> Encoder b
 reEncode f (Encoder a)  = Encoder (a . f)
@@ -78,7 +78,7 @@ getResultDecoders = \case
                                     Nothing -> P.throwIO $ DecodeError "Select Decoder: missing result key in object!"
                                   v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: " <> show v)
                               (V.head o)
-                   v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: expecting array but got: " <> (pack $ show v)
+                   v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: expecting array but got: " <> pack (show v)
                ) |]
   _ -> fail "unimplemented decoder!"
 
@@ -97,8 +97,9 @@ getSelectorRowType :: AST.Selector -> Q Type
 getSelectorRowType s = case s of
   AST.TypedSelector _ _ -> do
     t <- getSelectorType s
+    l <- getSelectorLabel s
     return
-      $ InfixT (LitT (StrTyLit $ getSelectorLabel s)) ''(.==) t
+      $ InfixT (LitT (StrTyLit l)) ''(.==) t
   a -> P.error $ "getSelectorRowType: No type information provided for selector: " <> show a
 
 getSelectorType :: AST.Selector -> Q Type
@@ -106,11 +107,32 @@ getSelectorType = \case
   AST.TypedSelector _ t -> return $ mkType t
   a -> P.error $ "getSelectorType: No type information provided for selector: " <> show a
 
-getSelectorLabel :: AST.Selector -> String
+getFieldLabel :: AST.Field -> Q String
+getFieldLabel = \case
+  AST.SimpleField t -> return $ unpack t
+  AST.IndexedField f _ -> getFieldLabel f
+  AST.FilteredField f _ -> getFieldLabel f
+  AST.CompositeField f1 f2 -> do
+    s1 <- getFieldLabel f1
+    s2 <- getFieldLabel f2
+    return $ s1 <> "." <> s2
+
+getEdgeLabel :: AST.Edge -> Q String
+getEdgeLabel = \case
+  AST.OutEdge f -> ("->" <>) <$> getFieldLabel f
+  AST.InEdge f -> ("<-" <>) <$> getFieldLabel f
+
+getSelectorLabel :: AST.Selector -> Q String
 getSelectorLabel = \case
-  AST.FieldSelector (AST.Field t) -> unpack t
-  AST.ExpSelector _ (AST.Field t) -> unpack t
-  AST.FieldSelectorAs (AST.Field t) _ -> unpack t
+  AST.FieldSelector f -> getFieldLabel f
+  AST.ExpSelector _ f -> getFieldLabel f
+  AST.SelectorAs _ f -> getFieldLabel f
+  AST.EdgeSelector mf edges -> do
+    mInitialLabel <- case mf of
+      Just f  -> Just <$> getFieldLabel f
+      Nothing -> return Nothing
+    edgeLabels <- mapM getEdgeLabel edges
+    return $ foldl1 (<>) ( fromMaybe "" mInitialLabel : edgeLabels )
   AST.TypedSelector s _ -> getSelectorLabel s
 
 parseQuery :: String -> Q Exp

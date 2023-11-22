@@ -7,6 +7,7 @@
 module Database.Surreal.AST where
 
 import           ClassyPrelude
+import           Data.Foldable (foldl1)
 import qualified Data.Text         as T
 import           Data.Time.ISO8601 ( formatISO8601 )
 
@@ -121,7 +122,7 @@ instance ToQL Field where
   toQL (SimpleField t) = t
   toQL (IndexedField t is) = prepText $ [toQL t] <> concatMap (\i -> ["[", toQL i, "]"]) is
   toQL (FilteredField f w) = prepText ["(", toQL f, toQL w, ")"]
-  toQL (CompositeField f1 f2) = prepText [toQL f1, ".", toQL f2]
+  toQL (CompositeField f1 f2) = foldl1 (<>) [toQL f1, ".", toQL f2]
 
 data Edge
   = OutEdge Field -- ^ ->bought
@@ -129,15 +130,17 @@ data Edge
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Edge where
-  toQL (OutEdge f) = prepText [ "->", toQL f ]
-  toQL (InEdge f) = prepText [ "<-", toQL f ]
+  toQL (OutEdge f) = "->" <> toQL f
+  toQL (InEdge f) = "<-" <> toQL f
 
 -- TODO: add edge selectors like ->user->likes-> etc
 data Selector
   = FieldSelector Field
   | ExpSelector Exp Field
-  | FieldSelectorAs Field Field
-  | EdgeSelector (Maybe Field) [Edge] -- ^ f1->f2<-f3 or ->f2<-f3
+  | SelectorAs Selector Field
+  | EdgeSelector (Maybe Field) [Edge] Field
+  -- ^ f1->f2<-f3 or ->f2<-f3, last field is the alias for the results,
+  -- we force it since the results are unreliable if the alias is not given!!
   | TypedSelector Selector TypeDef
   deriving (Eq, Generic, Read, Show)
 
@@ -146,10 +149,10 @@ instance ToQL Selector where
     FieldSelector f -> prepText [toQL f] -- TODO: remove this to prevent untyped selectors?
     ExpSelector e f ->
       prepText [ toQL e, "AS", toQL f ]
-    FieldSelectorAs f fAs ->
-      prepText [ toQL f, "AS", toQL fAs ]
-    EdgeSelector mf es ->
-      prepText $ maybe "" toQL mf : map toQL es
+    SelectorAs s fAs ->
+      prepText [ toQL s, "AS", toQL fAs ]
+    EdgeSelector mf es f ->
+      foldl1 (<>) $ maybe "" toQL mf : map toQL es <> [" AS ", toQL f]
     TypedSelector s _ -> toQL s
 
 newtype Selectors
@@ -388,7 +391,7 @@ newtype Block
   deriving (Eq, Generic, Read, Show)
 
 prepText :: [Text] -> Text
-prepText ts = T.replace "  " " " ((unwords . map T.strip) ts)
+prepText = unwords . filter (/= "") . map T.strip
 
 class ToQL a where
   toQL :: a -> Text
