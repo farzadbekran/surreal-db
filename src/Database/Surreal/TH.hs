@@ -1,13 +1,13 @@
-{-# LANGUAGE DeriveAnyClass             #-}
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE DuplicateRecordFields      #-}
-{-# LANGUAGE InstanceSigs               #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE NoImplicitPrelude          #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE InstanceSigs          #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE NoImplicitPrelude     #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeApplications      #-}
 
 module Database.Surreal.TH where
 
@@ -19,6 +19,7 @@ import           Data.Row.Records
 import qualified Data.Vector                     as V
 import qualified Database.Surreal.AST            as AST
 import           Database.Surreal.Parser
+import           Database.Surreal.TypeHandler
 import           Database.Surreal.WS.RPC.Surreal as RPC
 import           Language.Haskell.TH
 import           Language.Haskell.TH.Quote
@@ -60,80 +61,24 @@ query = QuasiQuoter
   , quoteType = P.error "quoteType not supported in query"
   }
 
-combineToRowTypeDef :: Type -> Type -> Type
-combineToRowTypeDef t1 t2 = InfixT t2 ''(.+) t1
-
 getResultDecoders :: AST.Exp -> Q Exp
-getResultDecoders = \case
-  AST.SelectE _ (AST.Selectors ss) _ _ _ _ _ _ _ _ _ _ _ _ -> do
-    types <- mapM getSelectorRowType ss
-    let rowType = foldr1 combineToRowTypeDef types
-    [| Decoder (\case
-                   Array o -> (\case
-                                  (Object r) -> case r !? "result" of
-                                    Just r1 -> do
-                                      case fromJSON @[Rec $(return rowType)] r1 of
-                                        Aeson.Success r2 -> return r2
-                                        Aeson.Error e -> P.throwIO $ DecodeError e
-                                    Nothing -> P.throwIO $ DecodeError "Select Decoder: missing result key in object!"
-                                  v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: " <> show v)
-                              (V.head o)
-                   v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: expecting array but got: " <> pack (show v)
-               ) |]
-  _ -> fail "unimplemented decoder!"
-
--- | converts `AST.TypeDef` to TH type definition AST
-mkType :: AST.TypeDef -> Type
-mkType (AST.T name params) = case reverse params of
-  []   -> ConT (mkName name)
-  t:ts -> AppT (prepend (ConT (mkName name)) (reverse ts)) (mkType t)
-  where
-    prepend t ts = case reverse ts of
-      []     -> t
-      t':ts' -> AppT (prepend t (reverse ts')) (mkType t')
-
--- | returns a row type like `"name" .== Text`
-getSelectorRowType :: AST.Selector -> Q Type
-getSelectorRowType s = case s of
-  AST.TypedSelector _ _ -> do
-    t <- getSelectorType s
-    l <- getSelectorLabel s
-    return
-      $ InfixT (LitT (StrTyLit l)) ''(.==) t
-  a -> P.error $ "getSelectorRowType: No type information provided for selector: " <> show a
-
-getSelectorType :: AST.Selector -> Q Type
-getSelectorType = \case
-  AST.TypedSelector _ t -> return $ mkType t
-  a -> P.error $ "getSelectorType: No type information provided for selector: " <> show a
-
-getFieldLabel :: AST.Field -> Q String
-getFieldLabel = \case
-  AST.SimpleField t -> return $ unpack t
-  AST.IndexedField f _ -> getFieldLabel f
-  AST.FilteredField f _ -> getFieldLabel f
-  AST.CompositeField f1 f2 -> do
-    s1 <- getFieldLabel f1
-    s2 <- getFieldLabel f2
-    return $ s1 <> "." <> s2
-
-getEdgeLabel :: AST.Edge -> Q String
-getEdgeLabel = \case
-  AST.OutEdge f -> ("->" <>) <$> getFieldLabel f
-  AST.InEdge f -> ("<-" <>) <$> getFieldLabel f
-
-getSelectorLabel :: AST.Selector -> Q String
-getSelectorLabel = \case
-  AST.FieldSelector f -> getFieldLabel f
-  AST.ExpSelector _ f -> getFieldLabel f
-  AST.SelectorAs _ f -> getFieldLabel f
-  AST.EdgeSelector mf edges -> do
-    mInitialLabel <- case mf of
-      Just f  -> Just <$> getFieldLabel f
-      Nothing -> return Nothing
-    edgeLabels <- mapM getEdgeLabel edges
-    return $ foldl1 (<>) ( fromMaybe "" mInitialLabel : edgeLabels )
-  AST.TypedSelector s _ -> getSelectorLabel s
+getResultDecoders e = do
+  t <- getExpressionType e
+  case e of
+    AST.SelectE {} -> do
+      [| Decoder (\case
+                     Array o -> (\case
+                                    (Object r) -> case r !? "result" of
+                                      Just r1 -> do
+                                        case fromJSON @[Rec $(return t)] r1 of
+                                          Aeson.Success r2 -> return r2
+                                          Aeson.Error err -> P.throwIO $ DecodeError err
+                                      Nothing -> P.throwIO $ DecodeError "Select Decoder: missing result key in object!"
+                                    v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: " <> show v)
+                                (V.head o)
+                     v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: expecting array but got: " <> pack (show v)
+                 ) |]
+    _ -> fail "unimplemented decoder!"
 
 parseQuery :: String -> Q Exp
 parseQuery s = do

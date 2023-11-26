@@ -13,10 +13,9 @@ module Database.Surreal.TypeHandler where
 
 import           ClassyPrelude              as P hiding ( exp, lift )
 import           Control.Monad.Fail
-import           Control.Monad.State.Strict
 import           Data.Foldable              hiding ( elem, notElem )
-import qualified Data.Vector                as V
-import           Database.Surreal.AST
+import           Data.Row
+import           Database.Surreal.AST       as AST
 import qualified Language.Haskell.TH        as TH
 
 getFieldLabel :: Field -> Text
@@ -51,7 +50,7 @@ extractSelectorTypes (Selectors ss) = mapM (\s -> do
       TypedSelector s _ -> getSelectorLabel s
 
 -- | Gives the base type for the select expression, after applying the clauses that
--- modiify the return type like omit, value, group by, etc
+-- modiify the return type like omit, value, split, etc
 getSelectBaseType :: MonadFail m => Exp -> m [(Maybe Text, TypeDef)]
 getSelectBaseType = \case
   SelectE mValue selectors mOmit _ _ mSplit _ _ _ _ _ _ _ mExplain -> do
@@ -93,3 +92,43 @@ getSelectBaseType = \case
         Just _ -> return [(Just "detail", T "Value" []), (Just "operation", T "Value" [])]
         Nothing  -> return ts
   a -> fail $ "Expected a Select expression but got: " <> show a
+
+getBaseType :: MonadFail m => Exp -> m [(Maybe Text, TypeDef)]
+getBaseType = \case
+  se@(SelectE {}) -> getSelectBaseType se
+  _ -> fail "getBaseType: undefined!"
+
+-- | converts `TypeDef` to TH type definition AST
+mkType :: TypeDef -> TH.Type
+mkType (T name params) = case reverse params of
+  []   -> TH.ConT (TH.mkName name)
+  t:ts -> TH.AppT (prepend (TH.ConT (TH.mkName name)) (reverse ts)) (mkType t)
+  where
+    prepend t ts = case reverse ts of
+      []     -> t
+      t':ts' -> TH.AppT (prepend t (reverse ts')) (mkType t')
+
+-- | returns a row type like `"name" .== Text`
+getRowType :: MonadFail m => (Maybe Text, TypeDef) -> m TH.Type
+getRowType = \case
+  (Just l, t) -> do
+    let t' = mkType t
+    return
+      $ TH.InfixT (TH.LitT (TH.StrTyLit $ unpack l)) ''(.==) t'
+  a -> fail $ "getRowType: Can't make a row type without a label: " <> show a
+
+combineToRowType :: TH.Type -> TH.Type -> TH.Type
+combineToRowType t1 t2 = TH.InfixT t2 ''(.+) t1
+
+mkRecType :: MonadFail m => [(Maybe Text, TypeDef)] -> m TH.Type
+mkRecType types = do
+  rTypes <- mapM getRowType types
+  return $ foldr1 combineToRowType rTypes
+
+getExpressionType :: MonadFail m => Exp -> m TH.Type
+getExpressionType e = do
+  t <- getBaseType e
+  case t of
+    [] -> return $ TH.TupleT 0
+    [(Nothing, t')] -> return $ mkType t'
+    ts -> mkRecType ts
