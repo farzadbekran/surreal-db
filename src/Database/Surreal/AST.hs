@@ -111,6 +111,9 @@ newtype Param
   = Param Text
   deriving (Eq, Generic, Read, Show)
 
+instance ToQL Param where
+  toQL (Param t) = "$" <> t
+
 data Field
   = SimpleField Text -- ^ name
   | IndexedField Field [Literal] -- ^ address[0]
@@ -381,14 +384,19 @@ data Statement
   | ForS Param Exp Block
   deriving (Eq, Generic, Read, Show)
 
-data SurQLLine
-  = ExpLine Exp
-  | StatementLine Statement
-  deriving (Eq, Generic, Read, Show)
-
-newtype Block
-  = Block [SurQLLine]
-  deriving (Eq, Generic, Read, Show)
+instance ToQL Statement where
+  toQL = \case
+    UseS u -> case u of
+      USE ns db -> "USE " <> ns <> " " <> db
+      USE_NS ns -> "USE " <> ns
+      USE_DB db -> "USE " <> db
+    LetS p e -> "LET " <> toQL p <> " = " <> toQL e
+    BeginS -> "BEGIN"
+    CancelS -> "CANCEL"
+    CommitS -> "COMMIT"
+    BreakS -> "BREAK"
+    ContinueS -> "CONTINUE"
+    ForS p e b -> "FOR " <> toQL p <> " IN " <> toQL e <> " {" <> toQL b <> "}"
 
 prepText :: [Text] -> Text
 prepText = unwords . filter (/= "") . map T.strip
@@ -453,7 +461,22 @@ instance ToQL Exp where
                , renderIfJust mParallel
                , renderIfJust mExplain
                ]
-    --_ -> error "expression toQL undefined!"
+
+data SurQLLine
+  = ExpLine Exp
+  | StatementLine Statement
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL SurQLLine where
+  toQL (ExpLine e) = toQL e
+  toQL (StatementLine s) = toQL s
+
+newtype Block
+  = Block [SurQLLine]
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL Block where
+  toQL (Block ls) = prepText (intersperse ";\n" $ map toQL ls) <> ";"
 
 -- test :: Exp
 -- test = SelectE Nothing

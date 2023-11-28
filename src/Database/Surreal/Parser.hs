@@ -467,6 +467,34 @@ term = sc
               , betweenParens exp
               ])
 
+-- TODO: finish this
+statement :: Parser Statement
+statement = label "Statement" $ lexeme $ choice $ map try
+  []
+
+expLine :: Parser SurQLLine
+expLine = label "expLine" $ lexeme $ do
+  e <- exp
+  _ <- symbol ";"
+  return $ ExpLine e
+
+statementLine :: Parser SurQLLine
+statementLine = label "statementLine" $ lexeme $ do
+  s <- statement
+  _ <- symbol ";"
+  return $ StatementLine s
+
+surQLLine :: Parser SurQLLine
+surQLLine = label "SurQLLine" $ lexeme $ choice $ map try
+  [ expLine
+  , statementLine
+  ]
+
+block :: Parser Block
+block = lexeme $ do
+  ls <- sepBy1 surQLLine (symbol ";")
+  return $ Block ls
+
 -- object :: Parser (Object a)
 -- object = label "Object" $ do
 --   attribs <- label "Object Attribute" $ label <$> char ':' <*> exp
