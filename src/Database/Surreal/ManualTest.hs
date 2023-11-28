@@ -24,13 +24,13 @@ test = do
   connState <- RPC.connect RPC.defaultConnectionInfo
   res <- RPC.runSurreal connState $ do
     let q@(Query t _ _) =
-          [query|
-                select id :: Text,
-                       ->create->product AS cat :: (Vector TestRecType)
-                from artist
-                limit 2
-                fetch cat
-                |]
+          [sql|
+              select id :: Text, ->create->product AS cat :: (Vector TestRecType)
+              from artist
+              limit 2
+              fetch cat;
+              select 1 + 2 as ppp :: Int from artist limit 1;
+              |]
     print t
     runQuery () q
   print res

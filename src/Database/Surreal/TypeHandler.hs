@@ -96,7 +96,7 @@ getSelectBaseType = \case
 getBaseType :: MonadFail m => Exp -> m [(Maybe Text, TypeDef)]
 getBaseType = \case
   se@(SelectE {}) -> getSelectBaseType se
-  _ -> fail "getBaseType: undefined!"
+  a -> fail $ "getBaseType: undefined: " <> show a
 
 -- | converts `TypeDef` to TH type definition AST
 mkType :: TypeDef -> TH.Type

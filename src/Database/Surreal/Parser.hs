@@ -469,31 +469,32 @@ term = sc
 
 -- TODO: finish this
 statement :: Parser Statement
-statement = label "Statement" $ lexeme $ choice $ map try
+statement = lexeme $ choice $ map try
   []
 
 expLine :: Parser SurQLLine
-expLine = label "expLine" $ lexeme $ do
-  e <- exp
+expLine = lexeme $ do
+  l <- ExpLine <$> exp
   _ <- symbol ";"
-  return $ ExpLine e
+  return l
 
 statementLine :: Parser SurQLLine
-statementLine = label "statementLine" $ lexeme $ do
-  s <- statement
+statementLine = lexeme $ do
+  l <- StatementLine <$> statement
   _ <- symbol ";"
-  return $ StatementLine s
+  return l
 
 surQLLine :: Parser SurQLLine
-surQLLine = label "SurQLLine" $ lexeme $ choice $ map try
-  [ expLine
-  , statementLine
+surQLLine = lexeme $ choice $ map try
+  [ statementLine
+  , expLine
   ]
 
 block :: Parser Block
 block = lexeme $ do
-  ls <- sepBy1 surQLLine (symbol ";")
-  return $ Block ls
+  bl <- Block <$> many surQLLine
+  eof
+  return bl
 
 -- object :: Parser (Object a)
 -- object = label "Object" $ do

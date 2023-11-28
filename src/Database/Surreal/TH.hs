@@ -53,38 +53,62 @@ data Query input output
 --   bimap :: (a -> b) -> (c -> d) -> Query a c -> Query b d
 --   bimap l r (Query t a c) = Query t (l a) (r c)
 
-query :: QuasiQuoter
-query = QuasiQuoter
+sql :: QuasiQuoter
+sql = QuasiQuoter
   { quoteDec  = P.error "quoteDec not supported in query"
-  , quoteExp  = parseQuery
+  , quoteExp  = parseSQL
   , quotePat  = P.error "quotePat not supported in query"
   , quoteType = P.error "quoteType not supported in query"
   }
 
-getResultDecoders :: AST.Exp -> Q Exp
-getResultDecoders e = do
+getExpResultDecoder :: AST.Exp -> Q Exp
+getExpResultDecoder e = do
   t <- getExpressionType e
   case e of
     AST.SelectE {} -> do
-      [| Decoder (\case
-                     Array o -> (\case
-                                    (Object r) -> case r !? "result" of
-                                      Just r1 -> do
-                                        case fromJSON @[Rec $(return t)] r1 of
-                                          Aeson.Success r2 -> return r2
-                                          Aeson.Error err -> P.throwIO $ DecodeError err
-                                      Nothing -> P.throwIO $ DecodeError "Select Decoder: missing result key in object!"
-                                    v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: " <> show v)
-                                (V.head o)
-                     v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: expecting array but got: " <> pack (show v)
-                 ) |]
+      [| (\case
+             (Object r) -> case r !? "result" of
+                             Just r1 -> do
+                               case fromJSON @[Rec $(return t)] r1 of
+                                 Aeson.Success r2 -> return r2
+                                 Aeson.Error err -> P.throwIO $ DecodeError err
+                             Nothing -> P.throwIO $ DecodeError "Select Decoder: missing 'result' key in object!"
+             v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: " <> show v)
+       |]
     _ -> fail "unimplemented decoder!"
 
-parseQuery :: String -> Q Exp
-parseQuery s = do
-  let eAST = parse exp "" s
-  case eAST of
-    Right ast -> [| Query $(lift $ AST.toQL ast) EmptyEncoder $(getResultDecoders ast) |]
+-- TODO: add support for return statement
+getLineResultDecoder :: AST.SurQLLine -> Q Exp
+getLineResultDecoder = \case
+  AST.ExpLine e -> getExpResultDecoder e
+  AST.StatementLine _ -> [| (\_ -> return ()) |]
+
+-- | we only care about the type of the last line, and decode that
+getBlockResultDecoders :: AST.Block -> Q Exp
+getBlockResultDecoders (AST.Block ls) = do
+  decoders <- mapM getLineResultDecoder ls
+  case lastMay decoders of
+    Just decoder ->
+      [| Decoder (\case
+                     Array a -> $(return decoder) (V.last a)
+                     v -> P.throwIO $ DecodeError
+                       $ "Base Decoder: Unexpected result format: expecting array but got: "
+                       <> pack (show v)
+                 ) |]
+    Nothing -> fail $ "No decoder for the last line in the SQL Block: " <> show ls
+
+-- parseQuery :: String -> Q Exp
+-- parseQuery s = do
+--   let eAST = parse exp "" s
+--   case eAST of
+--     Right ast -> [| Query $(lift $ AST.toQL ast) EmptyEncoder $(getResultDecoders ast) |]
+--     Left e    -> fail $ errorBundlePretty e
+
+parseSQL :: String -> Q Exp
+parseSQL s = do
+  let blockAST = parse block "" s
+  case blockAST of
+    Right ast -> [| Query $(lift $ AST.toQL ast) EmptyEncoder $(getBlockResultDecoders ast) |]
     Left e    -> fail $ errorBundlePretty e
 
 runQuery :: input -> Query input output -> Surreal output
