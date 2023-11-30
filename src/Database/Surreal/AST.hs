@@ -11,6 +11,18 @@ import           Data.Foldable (foldl1)
 import qualified Data.Text         as T
 import           Data.Time.ISO8601 ( formatISO8601 )
 
+prepText :: [Text] -> Text
+prepText = unwords . filter (/= "") . map T.strip
+
+renderIfJust :: ToQL p => Maybe p -> Text
+renderIfJust = maybe "" toQL
+
+class ToQL a where
+  toQL :: a -> Text
+
+class HasInput a where
+  getInputs :: a -> [Input]
+
 newtype FNName
   = FNName Text
   deriving (Eq, Generic, Read, Show)
@@ -127,6 +139,11 @@ instance ToQL Field where
   toQL (FilteredField f w) = prepText ["(", toQL f, toQL w, ")"]
   toQL (CompositeField f1 f2) = foldl1 (<>) [toQL f1, ".", toQL f2]
 
+instance HasInput Field where
+  getInputs = \case
+    FilteredField _ w -> getInputs w
+    _ -> []
+
 data Edge
   = OutEdge Field -- ^ ->bought
   | InEdge Field -- ^ <-bought
@@ -136,7 +153,10 @@ instance ToQL Edge where
   toQL (OutEdge f) = "->" <> toQL f
   toQL (InEdge f) = "<-" <> toQL f
 
--- TODO: add edge selectors like ->user->likes-> etc
+instance HasInput Edge where
+  getInputs (OutEdge f) = getInputs f
+  getInputs (InEdge f) = getInputs f
+
 data Selector
   = FieldSelector Field
   | ExpSelector Exp Field
@@ -158,6 +178,14 @@ instance ToQL Selector where
       foldl1 (<>) $ maybe "" toQL mf : map toQL es <> [" AS ", toQL f]
     TypedSelector s _ -> toQL s
 
+instance HasInput Selector where
+  getInputs = \case
+    FieldSelector f -> getInputs f
+    ExpSelector e f -> getInputs e <> getInputs f
+    SelectorAs s fAs -> getInputs s <> getInputs fAs
+    EdgeSelector mf es f -> maybe [] getInputs mf <> concatMap getInputs es <> getInputs f
+    TypedSelector s _ -> getInputs s
+
 newtype Selectors
   = Selectors [Selector]
   deriving (Eq, Generic, Read, Show)
@@ -165,6 +193,9 @@ newtype Selectors
 instance ToQL Selectors where
   toQL (Selectors []) = ""
   toQL (Selectors ss) = prepText $ intersperse "," $ map toQL ss
+
+instance HasInput Selectors where
+  getInputs (Selectors ss) = concatMap getInputs ss
 
 data VALUE = VALUE
   deriving (Eq, Generic, Read, Show)
@@ -216,12 +247,18 @@ instance ToQL FROM where
              , renderIfJust mWith
              ]
 
+instance HasInput FROM where
+  getInputs (FROM _ e _) = getInputs e
+
 newtype WHERE
   = WHERE Exp
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL WHERE where
   toQL (WHERE e) = prepText ["WHERE", toQL e]
+
+instance HasInput WHERE where
+  getInputs (WHERE e) = getInputs e
 
 newtype SPLIT
   = SPLIT [Field]
@@ -231,6 +268,9 @@ instance ToQL SPLIT where
   toQL (SPLIT []) = ""
   toQL (SPLIT fs) = prepText $ ["SPLIT"] <> intersperse "," (map toQL fs)
 
+instance HasInput SPLIT where
+  getInputs (SPLIT fs) = concatMap getInputs fs
+
 newtype GROUP
   = GROUP [Field]
   deriving (Eq, Generic, Read, Show)
@@ -239,7 +279,10 @@ instance ToQL GROUP where
   toQL (GROUP []) = ""
   toQL (GROUP fs) = prepText $ ["GROUP BY"] <> intersperse "," (map toQL fs)
 
-data OrderType = RAND | COLLATE | NUMERIC
+instance HasInput GROUP where
+  getInputs (GROUP fs) = concatMap getInputs fs
+
+data OrderType = RAND | COLLATE | NUMERIC | OrderTypeInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL OrderType where
@@ -247,14 +290,24 @@ instance ToQL OrderType where
     RAND -> "RAND"
     COLLATE -> "COLLATE"
     NUMERIC -> "NUMERIC"
+    OrderTypeInput i -> toQL i
 
-data OrderDirection = ASC | DESC
+instance HasInput OrderType where
+  getInputs (OrderTypeInput i) = [i]
+  getInputs _ = []
+
+data OrderDirection = ASC | DESC | OrderDirectionInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL OrderDirection where
   toQL = \case
     ASC -> "ASC"
     DESC -> "DESC"
+    OrderDirectionInput i -> toQL i
+
+instance HasInput OrderDirection where
+  getInputs (OrderDirectionInput i) = [i]
+  getInputs _ = []
 
 newtype ORDER
   = ORDER [(Field, Maybe OrderType, Maybe OrderDirection)]
@@ -267,19 +320,37 @@ instance ToQL ORDER where
       renderOrder (f, mOrderType, mOrderDirection) =
         prepText [ toQL f, renderIfJust mOrderType, renderIfJust mOrderDirection ]
 
-newtype LIMIT
-  = LIMIT Int64
+instance HasInput ORDER where
+  getInputs (ORDER os) =
+    concatMap (\(f, mOtype, mOdirection)
+               -> getInputs f
+                <> maybe [] getInputs mOtype
+                <> maybe [] getInputs mOdirection)
+    os
+
+data LIMIT
+  = LIMIT Int64 | LIMITInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL LIMIT where
   toQL (LIMIT i) = "LIMIT " <> tshow i
+  toQL (LIMITInput i) = "LIMIT " <> toQL i
 
-newtype START
-  = START Int64
+instance HasInput LIMIT where
+  getInputs (LIMITInput i) = [i]
+  getInputs _ = []
+
+data START
+  = START Int64 | STARTInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL START where
   toQL (START i) = "START " <> tshow i
+  toQL (STARTInput i) = "START " <> toQL i
+
+instance HasInput START where
+  getInputs (STARTInput i) = [i]
+  getInputs _ = []
 
 newtype FETCH
   = FETCH [Field]
@@ -289,12 +360,16 @@ instance ToQL FETCH where
   toQL (FETCH []) = ""
   toQL (FETCH fs) = prepText $ ["FETCH"] <> intersperse "," (map toQL fs)
 
-newtype TIMEOUT
-  = TIMEOUT Int64
+instance HasInput FETCH where
+  getInputs (FETCH fs) = concatMap getInputs fs
+
+data TIMEOUT
+  = TIMEOUT Int64 | TIMEOUTInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL TIMEOUT where
   toQL (TIMEOUT i) = "TIMEOUT " <> tshow i
+  toQL (TIMEOUTInput i) = "TIMEOUT " <> toQL i
 
 data PARALLEL = PARALLEL
   deriving (Eq, Generic, Read, Show)
@@ -309,7 +384,7 @@ instance ToQL EXPLAIN where
   toQL EXPLAIN = "EXPLAIN"
   toQL EXPLAINFULL = "EXPLAINFULL"
 
--- | duration formats like "1y2w3d", seuureal db currently does not support months
+-- | duration formats like "1y2w3d", surreal db currently does not support months
 data Duration
   = Duration { _y :: Int64
              , _w :: Int64
@@ -326,24 +401,66 @@ data Duration
 defaultDuration :: Duration
 defaultDuration = Duration 0 0 0 0 0 0 0 0 0
 
-newtype TableName
-  = TableName Text
+data TableName
+  = TableName Text | TableNameInput Input
   deriving (Eq, Generic, Read, Show)
+
+instance ToQL TableName where
+  toQL (TableName t) = t
+  toQL (TableNameInput i) = toQL i
+
+instance HasInput TableName where
+  getInputs (TableNameInput i) = [i]
+  getInputs _ = []
 
 newtype Object
   = Object [(Field, Exp)]
   deriving (Eq, Generic, Read, Show)
 
+instance ToQL Object where
+  toQL (Object fs) = prepText $ "{" : map renderField fs <> ["}"]
+    where
+      renderField :: (Field, Exp) -> Text
+      renderField (f, e) = toQL f <> ": " <> toQL e
+
+instance HasInput Object where
+  getInputs (Object fs)
+    = concatMap (\(f, e) -> getInputs f <> getInputs e)
+      fs
+
 data RecordID
-  = RecordID TableName ID
+  = RecordID TableName ID | RecordIDInput Input
   deriving (Eq, Generic, Read, Show)
+
+instance ToQL RecordID where
+  toQL (RecordID t i) = toQL t <> ":" <> toQL i
+  toQL (RecordIDInput i) = toQL i
+
+instance HasInput RecordID where
+  getInputs (RecordIDInput i) = [i]
+  getInputs (RecordID t i) = getInputs t <> getInputs i
 
 data ID
   = TextID Text
   | NumID Int64
   | ObjID Object
   | TupID [Exp]
+  | IDInput Input
   deriving (Eq, Generic, Read, Show)
+
+instance ToQL ID where
+  toQL = \case
+    TextID t -> t
+    NumID i -> tshow i
+    ObjID o -> toQL o
+    TupID es -> prepText $ ["["] <> intersperse "," (map toQL es) <> ["]"]
+    IDInput i -> toQL i
+
+instance HasInput ID where
+  getInputs (ObjID o) = getInputs o
+  getInputs (TupID es) = concatMap getInputs es
+  getInputs (IDInput i) = [i]
+  getInputs _ = []
 
 data Literal
   = NoneL
@@ -358,9 +475,47 @@ data Literal
   | ArrayL [Exp]
   | RecordIDL RecordID
   | FutureL Exp
+  | LiteralInput Input
   deriving (Eq, Generic, Read, Show)
 
--- TODO: add typed input
+instance ToQL Literal where
+  toQL = \case
+    NoneL -> "NONE"
+    NullL -> "Null"
+    BoolL b -> if b then "true" else "false"
+    TextL t -> t
+    Int64L i64 -> (pack . show) i64
+    FloatL f -> (pack . show) f
+    DateTimeL dt -> pack $ formatISO8601 dt
+    DurationL (Duration { .. }) ->
+      let frmt i l = if i > 0 then tshow i <> l else "" in
+      frmt _y "y"
+      <> frmt _w "w"
+      <> frmt _d "d"
+      <> frmt _h "h"
+      <> frmt _m "m"
+      <> frmt _s "s"
+      <> frmt _ms "ms"
+      <> frmt _us "us"
+      <> frmt _ns "ns"
+    LiteralInput i -> toQL i
+    _ -> "unimplemented!" -- TODO: finish this!
+
+instance HasInput Literal where
+  getInputs = \case
+    ObjectL o -> getInputs o
+    ArrayL es -> concatMap getInputs es
+    RecordIDL i -> getInputs i
+    FutureL e -> getInputs e
+    LiteralInput i -> [i]
+    _ -> []
+
+data Input = Input Int64 TypeDef
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL Input where
+  toQL (Input i _) = "%" <> tshow i
+
 data Exp
   = TypedE Exp TypeDef
   | OPE Operator Exp Exp
@@ -368,10 +523,66 @@ data Exp
   | LitE Literal
   | ConstE Text
   | ParamE Param
+  | InputE Input
   | IfThenE Exp Exp
   | IfThenElseE Exp Exp Exp
   | SelectE (Maybe VALUE) Selectors (Maybe OMIT) FROM (Maybe WHERE) (Maybe SPLIT) (Maybe GROUP) (Maybe ORDER) (Maybe LIMIT) (Maybe START) (Maybe FETCH) (Maybe TIMEOUT) (Maybe PARALLEL) (Maybe EXPLAIN)
   deriving (Eq, Generic, Read, Show)
+
+instance ToQL Exp where
+  toQL = \case
+    TypedE e _ -> toQL e
+    OPE op e1 e2 -> prepText [toQL e1, toQL op, toQL e2]
+    AppE (FNName fnName) ps -> prepText $ [fnName <> "("] <> intersperse ", " (map toQL ps) <> [")"]
+    LitE le -> toQL le
+    ConstE t -> t
+    ParamE (Param p) -> "$" <> p
+    InputE i -> toQL i
+    IfThenE e te -> prepText [ "IF", "(", toQL e, ")"
+                             , "THEN", toQL te
+                             , "END"]
+    IfThenElseE e te fe -> prepText [ "IF", "(", toQL e, ")"
+                                    , "THEN", toQL te
+                                    , "ELSE", toQL fe
+                                    , "END"]
+    SelectE mValue selectors mOmit from mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain ->
+      prepText [ "SELECT"
+               , renderIfJust mValue
+               , toQL selectors
+               , renderIfJust mOmit
+               , toQL from
+               , renderIfJust mWhere
+               , renderIfJust mSplit
+               , renderIfJust mGroup
+               , renderIfJust mOrder
+               , renderIfJust mLimit
+               , renderIfJust mStart
+               , renderIfJust mFetch
+               , renderIfJust mTimeout
+               , renderIfJust mParallel
+               , renderIfJust mExplain
+               ]
+
+instance HasInput Exp where
+  getInputs = \case
+    TypedE e _ -> getInputs e
+    OPE _ e1 e2 -> getInputs e1 <> getInputs e2
+    AppE _ ps -> concatMap getInputs ps
+    LitE le -> getInputs le
+    InputE i -> [i]
+    IfThenE e te -> getInputs e <> getInputs te
+    IfThenElseE e te fe -> getInputs e <> getInputs te <> getInputs fe
+    SelectE _ selectors _ from mWhere mSplit mGroup mOrder mLimit mStart mFetch _ _ _
+      -> getInputs selectors
+      <> getInputs from
+      <> maybe [] getInputs mWhere
+      <> maybe [] getInputs mSplit
+      <> maybe [] getInputs mGroup
+      <> maybe [] getInputs mOrder
+      <> maybe [] getInputs mLimit
+      <> maybe [] getInputs mStart
+      <> maybe [] getInputs mFetch
+    _ -> []
 
 data Statement
   = UseS USE
@@ -398,69 +609,11 @@ instance ToQL Statement where
     ContinueS -> "CONTINUE"
     ForS p e b -> "FOR " <> toQL p <> " IN " <> toQL e <> " {" <> toQL b <> "}"
 
-prepText :: [Text] -> Text
-prepText = unwords . filter (/= "") . map T.strip
-
-class ToQL a where
-  toQL :: a -> Text
-
-instance ToQL Literal where
-  toQL = \case
-    NoneL -> "NONE"
-    NullL -> "Null"
-    BoolL b -> if b then "true" else "false"
-    TextL t -> t
-    Int64L i64 -> (pack . show) i64
-    FloatL f -> (pack . show) f
-    DateTimeL dt -> pack $ formatISO8601 dt
-    DurationL (Duration { .. }) ->
-      let frmt i l = if i > 0 then (pack . show) i <> l else "" in
-      frmt _y "y"
-      <> frmt _w "w"
-      <> frmt _d "d"
-      <> frmt _h "h"
-      <> frmt _m "m"
-      <> frmt _s "s"
-      <> frmt _ms "ms"
-      <> frmt _us "us"
-      <> frmt _ns "ns"
-    _ -> "unimplemented!"
-
-renderIfJust :: ToQL p => Maybe p -> Text
-renderIfJust = maybe "" toQL
-
-instance ToQL Exp where
-  toQL = \case
-    TypedE e _ -> toQL e
-    OPE op e1 e2 -> prepText [toQL e1, toQL op, toQL e2]
-    AppE (FNName fnName) ps -> prepText $ [fnName <> "("] <> intersperse ", " (map toQL ps) <> [")"]
-    LitE le -> toQL le
-    ConstE t -> t
-    ParamE (Param p) -> "$" <> p
-    IfThenE e te -> prepText [ "IF", "(", toQL e, ")"
-                             , "THEN", toQL te
-                             , "END"]
-    IfThenElseE e te fe -> prepText [ "IF", "(", toQL e, ")"
-                                    , "THEN", toQL te
-                                    , "ELSE", toQL fe
-                                    , "END"]
-    SelectE mValue selectors mOmit from mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain ->
-      prepText [ "SELECT"
-               , renderIfJust mValue
-               , toQL selectors
-               , renderIfJust mOmit
-               , toQL from
-               , renderIfJust mWhere
-               , renderIfJust mSplit
-               , renderIfJust mGroup
-               , renderIfJust mOrder
-               , renderIfJust mLimit
-               , renderIfJust mStart
-               , renderIfJust mFetch
-               , renderIfJust mTimeout
-               , renderIfJust mParallel
-               , renderIfJust mExplain
-               ]
+instance HasInput Statement where
+  getInputs = \case
+    LetS _ e -> getInputs e
+    ForS _ e b -> getInputs e <> getInputs b
+    _ -> []
 
 data SurQLLine
   = ExpLine Exp
@@ -471,6 +624,11 @@ instance ToQL SurQLLine where
   toQL (ExpLine e) = toQL e
   toQL (StatementLine s) = toQL s
 
+instance HasInput SurQLLine where
+  getInputs = \case
+    ExpLine e -> getInputs e
+    StatementLine s -> getInputs s
+
 newtype Block
   = Block [SurQLLine]
   deriving (Eq, Generic, Read, Show)
@@ -478,10 +636,5 @@ newtype Block
 instance ToQL Block where
   toQL (Block ls) = prepText (intersperse ";\n" $ map toQL ls) <> ";"
 
--- test :: Exp
--- test = SelectE Nothing
---   (Selectors [FieldSelectorAs (Field "age") "age2"])
---   Nothing
---   (FROM Nothing (ConstE "users") Nothing)
---   (Just (WHERE (OPE (FNName ">") (ConstE "age") (LitE (Int64L 18)))))
---   Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+instance HasInput Block where
+  getInputs (Block ls) = concatMap getInputs ls

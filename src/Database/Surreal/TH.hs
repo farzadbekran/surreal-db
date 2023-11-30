@@ -8,6 +8,7 @@
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeOperators         #-}
 
 module Database.Surreal.TH where
 
@@ -16,6 +17,7 @@ import           Control.Monad.Fail
 import           Data.Aeson                      as Aeson
 import           Data.Foldable
 import           Data.Row.Records
+import           Data.Type.Equality
 import qualified Data.Vector                     as V
 import qualified Database.Surreal.AST            as AST
 import           Database.Surreal.Parser
@@ -26,32 +28,20 @@ import           Language.Haskell.TH.Quote
 import           Language.Haskell.TH.Syntax
 import           Text.Megaparsec                 hiding ( Label )
 
-data Encoder a
-  = Encoder (a -> Value)
-  | EmptyEncoder
-newtype Decoder a
-  = Decoder (Value -> Surreal a)
+-- | The type used by TH to parse SurrealQL
+data Query input output
+  = Query Text (input -> [Value]) (Value -> Surreal output)
 
 newtype DecodeError
   = DecodeError String
   deriving (Exception, Show)
 
-reEncode :: (b -> a) -> Encoder a -> Encoder b
-reEncode f (Encoder a)  = Encoder (a . f)
-reEncode _ EmptyEncoder = EmptyEncoder
+reEncode :: (i2 -> i) -> Query i o -> Query i2 o
+reEncode f (Query t ie od)  = Query t (ie . f) od
 
-reDecode :: (a -> Surreal b) -> Decoder a -> Decoder b
-reDecode f (Decoder a) = Decoder (\r -> do
-                                     r1 <- a r
-                                     f r1)
-
--- | The type used by TH to parse SurrealQL
-data Query input output
-  = Query Text (Encoder input) (Decoder output)
-
--- instance Bifunctor Query where
---   bimap :: (a -> b) -> (c -> d) -> Query a c -> Query b d
---   bimap l r (Query t a c) = Query t (l a) (r c)
+reDecode :: (o -> Surreal o2) -> Query i o -> Query i o2
+reDecode f (Query t ie od)
+  = Query t ie (od >=> f)
 
 sql :: QuasiQuoter
 sql = QuasiQuoter
@@ -71,7 +61,7 @@ getExpResultDecoder e = do
                              Just r1 -> do
                                case fromJSON @[Rec $(return t)] r1 of
                                  Aeson.Success r2 -> return r2
-                                 Aeson.Error err -> P.throwIO $ DecodeError err
+                                 Aeson.Error err  -> P.throwIO $ DecodeError err
                              Nothing -> P.throwIO $ DecodeError "Select Decoder: missing 'result' key in object!"
              v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: " <> show v)
        |]
@@ -89,39 +79,26 @@ getBlockResultDecoders (AST.Block ls) = do
   decoders <- mapM getLineResultDecoder ls
   case lastMay decoders of
     Just decoder ->
-      [| Decoder (\case
-                     Array a -> $(return decoder) (V.last a)
-                     v -> P.throwIO $ DecodeError
-                       $ "Base Decoder: Unexpected result format: expecting array but got: "
-                       <> pack (show v)
-                 ) |]
+      [| (\case
+           Array a -> $(return decoder) (V.last a)
+           v -> P.throwIO $ DecodeError
+             $ "Base Decoder: Unexpected result format: expecting array but got: "
+             <> pack (show v)
+         ) |]
     Nothing -> fail $ "No decoder for the last line in the SQL Block: " <> show ls
-
--- parseQuery :: String -> Q Exp
--- parseQuery s = do
---   let eAST = parse exp "" s
---   case eAST of
---     Right ast -> [| Query $(lift $ AST.toQL ast) EmptyEncoder $(getResultDecoders ast) |]
---     Left e    -> fail $ errorBundlePretty e
 
 parseSQL :: String -> Q Exp
 parseSQL s = do
   let blockAST = parse block "" s
   case blockAST of
-    Right ast -> [| Query $(lift $ AST.toQL ast) EmptyEncoder $(getBlockResultDecoders ast) |]
+    Right ast -> [| Query $(lift $ AST.toQL ast) (const []) $(getBlockResultDecoders ast) |]
     Left e    -> fail $ errorBundlePretty e
 
+-- TODO: apply inputs here
 runQuery :: input -> Query input output -> Surreal output
-runQuery _ (Query q _ (Decoder decoder)) = do
+runQuery _ (Query q _ decoder) = do
   RPC.Response { RPC.result = result, RPC.error = err } <- RPC.send "query" [String q]
   --print result
   case err of
     Just e  -> P.throwIO e
     Nothing -> decoder $ fromMaybe Null result
-
--- signIn :: MonadUnliftIO m => Text -> Text -> m (Either RPC.Error ())
--- signIn user pass = do
---   RPC.Response { RPC.result = result, RPC.error = err } <- RPC.send "query" [q]
---   case err of
---     Just e  -> return $ Left e
---     Nothing -> return $ Right $ f $ fromMaybe [] result

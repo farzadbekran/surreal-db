@@ -196,6 +196,13 @@ paramE = label "ParamE" $ lexeme $ do
   p <- pack <$> some alphaNumChar
   return $ ParamE (Param p)
 
+inputE :: Parser Exp
+inputE = label "InputE" $ lexeme $ do
+  _ <- char '%'
+  i <- lexeme intParser
+  _ <- lexeme (symbol "::")
+  InputE . Input i <$> parseType
+
 ifThenE :: Parser Exp
 ifThenE = label "IfThenE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "IF"
@@ -458,6 +465,7 @@ term :: Parser Exp
 term = sc
   >> lexeme (choice
               [ paramE
+              , inputE
               , ifThenE
               , ifThenElseE
               , selectE
@@ -492,7 +500,7 @@ surQLLine = lexeme $ choice $ map try
 
 block :: Parser Block
 block = lexeme $ do
-  bl <- Block <$> many surQLLine
+  bl <- Block <$> some surQLLine
   eof
   return bl
 
