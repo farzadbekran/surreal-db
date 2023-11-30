@@ -1,27 +1,29 @@
-{-# LANGUAGE DeriveAnyClass            #-}
-{-# LANGUAGE DeriveFunctor             #-}
-{-# LANGUAGE DuplicateRecordFields     #-}
-{-# LANGUAGE InstanceSigs              #-}
-{-# LANGUAGE LambdaCase                #-}
-{-# LANGUAGE NamedFieldPuns            #-}
-{-# LANGUAGE NoImplicitPrelude         #-}
-{-# LANGUAGE RecordWildCards           #-}
-{-# LANGUAGE TemplateHaskell           #-}
-{-# LANGUAGE TypeApplications          #-}
-{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE InstanceSigs          #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE NoImplicitPrelude     #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeOperators         #-}
 
 module Database.Surreal.TH where
 
 import           ClassyPrelude                   as P hiding ( exp, lift )
 import           Control.Monad.Fail
 import           Data.Aeson                      as Aeson
+import           Data.Aeson.Text                 ( encodeToLazyText )
 import           Data.Foldable                   hiding ( concatMap )
 import           Data.Row.Records
-import           Data.Type.Equality
+import qualified Data.Text                       as T
 import qualified Data.Vector                     as V
 import           Database.Surreal.AST            ( HasInput (getInputs) )
 import qualified Database.Surreal.AST            as AST
-import           Database.Surreal.Parser
+import           Database.Surreal.Parser         hiding ( input )
 import           Database.Surreal.TypeHandler
 import           Database.Surreal.WS.RPC.Surreal as RPC
 import           Language.Haskell.TH
@@ -108,11 +110,19 @@ parseSQL s = do
     getSignatures inputs = tupP $ P.map (\(AST.Input _ t) -> sigP wildP (return $ mkType t)) inputs
 
 
--- TODO: apply inputs here
+applyInput :: input -> Query input output -> Surreal Text
+applyInput input (Query q encoder _) = do
+  let encodedInput = encoder input
+  case encodedInput of
+    Array is -> do
+      let encodedVals = P.map (\(i :: Int64,v) -> (i, toStrict $ encodeToLazyText v)) (P.zip [1..] $ P.toList is)
+      return $ foldl (\r (i,t) -> T.replace ("%" <> tshow i) t r) q encodedVals
+    i        -> return $ T.replace "%1" (toStrict $ encodeToLazyText i) q
+
 runQuery :: input -> Query input output -> Surreal output
-runQuery _ (Query q _ decoder) = do
+runQuery input query@(Query _ _ decoder) = do
+  q <- applyInput input query
   RPC.Response { RPC.result = result, RPC.error = err } <- RPC.send "query" [String q]
-  --print result
   case err of
     Just e  -> P.throwIO e
     Nothing -> decoder $ fromMaybe Null result

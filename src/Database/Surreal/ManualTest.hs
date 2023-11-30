@@ -33,5 +33,5 @@ test = do
               select 1 + 2 as ppp :: Int from artist limit 1;
               |]
     print t
-    runQuery ("", 22) q
+    runQuery ("rep", 22) q
   print res
