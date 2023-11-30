@@ -45,6 +45,28 @@ betweenParens = between (char '(') (char ')')
 maybeBetweenParens :: Parser a -> Parser a
 maybeBetweenParens p = p <|> betweenParens p
 
+-- | Type Parsers
+
+simpleType :: Parser TypeDef
+simpleType = do
+  prefix <- try $ lexeme parseCapitalWord
+  postfix <- many
+    $ try
+    $ lexeme
+    $ between (char '(') (char ')') simpleType <|> typeCon
+  return $ T prefix postfix
+
+parseType :: Parser TypeDef
+parseType = lexeme $ maybeBetweenParens simpleType
+
+-- | Input
+input :: Parser Input
+input = label "Input" $ lexeme $ do
+  _ <- char '%'
+  i <- lexeme intParser
+  _ <- lexeme (symbol "::")
+  Input i <$> parseType
+
 -- | Literals
 
 noneL :: Parser Literal
@@ -115,6 +137,9 @@ durationL = label "Duration" $ lexeme $ do
                  defaultDuration parts
   return $ DurationL duration
 
+literalInput :: Parser Literal
+literalInput = label "LiteralInput" $ lexeme $ LiteralInput <$> input
+
 -- | TODO: add missing types like object
 literal :: Parser Literal
 literal = lexeme $ maybeBetweenParens $ choice $ map try
@@ -126,6 +151,7 @@ literal = lexeme $ maybeBetweenParens $ choice $ map try
   , floatL
   , textL
   , int64L
+  , literalInput
   ]
 
 simpleField :: Parser Field
@@ -148,6 +174,9 @@ filteredField = label "FilteredField" $ lexeme $ betweenParens $ do
   f <- simpleField
   FilteredField f <$> where_
 
+fieldInput :: Parser Field
+fieldInput = label "FieldInpur" $ FieldInput <$> input
+
 fieldOperatorTable :: [[E.Operator Parser Field]]
 fieldOperatorTable = [ [ E.Postfix indexedField
                        , E.InfixL (symbol "." $> CompositeField)
@@ -160,6 +189,7 @@ fieldTerm :: Parser Field
 fieldTerm = lexeme $ choice $ map try
   [ filteredField
   , simpleField
+  , fieldInput
   ]
 
 isValidIdentifierChar :: Char -> Bool
@@ -198,10 +228,7 @@ paramE = label "ParamE" $ lexeme $ do
 
 inputE :: Parser Exp
 inputE = label "InputE" $ lexeme $ do
-  _ <- char '%'
-  i <- lexeme intParser
-  _ <- lexeme (symbol "::")
-  InputE . Input i <$> parseType
+  InputE <$> input
 
 ifThenE :: Parser Exp
 ifThenE = label "IfThenE" $ lexeme $ do
@@ -229,18 +256,6 @@ typeCon :: Parser TypeDef
 typeCon = do
   w <- try $ lexeme parseCapitalWord
   return $ T w []
-
-simpleType :: Parser TypeDef
-simpleType = do
-  prefix <- try $ lexeme parseCapitalWord
-  postfix <- many
-    $ try
-    $ lexeme
-    $ between (char '(') (char ')') simpleType <|> typeCon
-  return $ T prefix postfix
-
-parseType :: Parser TypeDef
-parseType = lexeme $ maybeBetweenParens simpleType
 
 outEdge :: Parser Edge
 outEdge = label "OutEdge" $ lexeme $ do
@@ -353,11 +368,13 @@ orderType = label "OrderType" $ lexeme $ do
   caseInsensitiveSymbol "RAND" $> RAND
   <|> caseInsensitiveSymbol "COLLATE" $> COLLATE
   <|> caseInsensitiveSymbol "NUMERIC" $> NUMERIC
+  <|> OrderTypeInput <$> input
 
 orderDirection :: Parser OrderDirection
 orderDirection = label "OrderDirection" $ lexeme $ do
   caseInsensitiveSymbol "ASC" $> ASC
   <|> caseInsensitiveSymbol "DESC" $> DESC
+  <|> OrderDirectionInput <$> input
 
 order :: Parser ORDER
 order = label "ORDER" $ lexeme $ do
@@ -371,13 +388,13 @@ limit :: Parser LIMIT
 limit = label "LIMIT" $ lexeme $ do
   _ <- caseInsensitiveSymbol "LIMIT"
   _ <- optional $ caseInsensitiveSymbol "BY"
-  read <$> some numberChar <&> LIMIT
+  LIMIT <$> intParser <|> LIMITInput <$> input
 
 start :: Parser START
 start = label "START" $ lexeme $ do
   _ <- caseInsensitiveSymbol "START"
   _ <- optional $ caseInsensitiveSymbol "AT"
-  read <$> some numberChar <&> START
+  START <$> intParser <|> STARTInput <$> input
 
 fetch :: Parser FETCH
 fetch = label "FETCH" $ lexeme $ do
@@ -397,6 +414,11 @@ explain = label "EXPLAIN" $ lexeme $ do
   _ <- caseInsensitiveSymbol "EXPLAIN"
   mFull <- optional $ caseInsensitiveSymbol "FULL"
   return $ if isJust mFull then EXPLAINFULL else EXPLAIN
+
+tableName :: Parser TableName
+tableName = label "TableName" $ lexeme
+  $ TableName <$> (pack <$> some alphaNumChar)
+  <|> TableNameInput <$> input
 
 selectE :: Parser Exp
 selectE = label "SelectE" $ lexeme $ do
@@ -419,9 +441,7 @@ selectE = label "SelectE" $ lexeme $ do
 
 -- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
-operatorTable = [ [ E.InfixN (symbol "&&" $> OPE (:&&))
-                  , E.InfixN (symbol "**" $> OPE (:**))
-                  , E.InfixN (symbol "||" $> OPE (:||))
+operatorTable = [ [ E.InfixN (symbol "**" $> OPE (:**))
                   , E.InfixN (symbol "??" $> OPE (:??))
                   , E.InfixN (symbol "?:" $> OPE (:?:))
                   , E.InfixN (symbol "==" $> OPE (:==))
@@ -456,7 +476,10 @@ operatorTable = [ [ E.InfixN (symbol "&&" $> OPE (:&&))
                   , E.InfixN (symbol "OUTSIDE" $> OPE OUTSIDE)
                   , E.InfixN (symbol "INTERSECTS" $> OPE INTERSECTS)
                   , E.InfixN (symbol "@@" $> OPE (:@@))
-                  ] ]
+                  ]
+                , [ E.InfixN (symbol "&&" $> OPE (:&&))
+                  , E.InfixN (symbol "||" $> OPE (:||))]
+                ]
 
 exp :: Parser Exp
 exp = E.makeExprParser term operatorTable
@@ -503,15 +526,3 @@ block = lexeme $ do
   bl <- Block <$> some surQLLine
   eof
   return bl
-
--- object :: Parser (Object a)
--- object = label "Object" $ do
---   attribs <- label "Object Attribute" $ label <$> char ':' <*> exp
-
--- objectL :: Parser (Literal (Object a))
--- objectL = label "Object Literal" $ object <&> ObjectL
-
--- atom :: Parser (Literal a)
--- atom = choice
---   [ BoolL <$> bool
---   ]

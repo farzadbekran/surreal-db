@@ -27,10 +27,11 @@ test = do
           [sql|
               select id :: Text, ->create->product AS cat :: (Vector TestRecType)
               from artist
+              where name = %1 :: Text && fname = %2 :: Int64
               limit 2
               fetch cat;
               select 1 + 2 as ppp :: Int from artist limit 1;
               |]
     print t
-    runQuery () q
+    runQuery ("", 22) q
   print res

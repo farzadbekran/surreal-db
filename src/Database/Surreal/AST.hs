@@ -131,6 +131,7 @@ data Field
   | IndexedField Field [Literal] -- ^ address[0]
   | FilteredField Field WHERE -- ^ (address WHERE city = "New York")
   | CompositeField Field Field -- ^ address.city
+  | FieldInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Field where
@@ -138,10 +139,12 @@ instance ToQL Field where
   toQL (IndexedField t is) = prepText $ [toQL t] <> concatMap (\i -> ["[", toQL i, "]"]) is
   toQL (FilteredField f w) = prepText ["(", toQL f, toQL w, ")"]
   toQL (CompositeField f1 f2) = foldl1 (<>) [toQL f1, ".", toQL f2]
+  toQL (FieldInput i) = toQL i
 
 instance HasInput Field where
   getInputs = \case
     FilteredField _ w -> getInputs w
+    FieldInput i -> [i]
     _ -> []
 
 data Edge

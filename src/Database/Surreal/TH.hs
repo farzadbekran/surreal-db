@@ -1,24 +1,25 @@
-{-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE DeriveFunctor         #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE InstanceSigs          #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE NoImplicitPrelude     #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE DeriveAnyClass            #-}
+{-# LANGUAGE DeriveFunctor             #-}
+{-# LANGUAGE DuplicateRecordFields     #-}
+{-# LANGUAGE InstanceSigs              #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE NoImplicitPrelude         #-}
+{-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE TypeOperators             #-}
 
 module Database.Surreal.TH where
 
 import           ClassyPrelude                   as P hiding ( exp, lift )
 import           Control.Monad.Fail
 import           Data.Aeson                      as Aeson
-import           Data.Foldable
+import           Data.Foldable                   hiding ( concatMap )
 import           Data.Row.Records
 import           Data.Type.Equality
 import qualified Data.Vector                     as V
+import           Database.Surreal.AST            ( HasInput (getInputs) )
 import qualified Database.Surreal.AST            as AST
 import           Database.Surreal.Parser
 import           Database.Surreal.TypeHandler
@@ -30,7 +31,7 @@ import           Text.Megaparsec                 hiding ( Label )
 
 -- | The type used by TH to parse SurrealQL
 data Query input output
-  = Query Text (input -> [Value]) (Value -> Surreal output)
+  = Query Text (input -> Value) (Value -> Surreal output)
 
 newtype DecodeError
   = DecodeError String
@@ -91,8 +92,21 @@ parseSQL :: String -> Q Exp
 parseSQL s = do
   let blockAST = parse block "" s
   case blockAST of
-    Right ast -> [| Query $(lift $ AST.toQL ast) (const []) $(getBlockResultDecoders ast) |]
+    Right ast -> do
+      let inputs = sortBy (compare `on` (\(AST.Input i _) -> i)) $ getInputs ast
+      [| Query $(lift $ AST.toQL ast) $(getInputEncoder inputs) $(getBlockResultDecoders ast) |]
     Left e    -> fail $ errorBundlePretty e
+  where
+    getInputEncoder :: [AST.Input] -> Q Exp
+    getInputEncoder inputs = lamE [getPatternBlock inputs] [| toJSON p |]
+    getPatternBlock :: [AST.Input] -> Q Pat
+    getPatternBlock inputs = do
+      asP (mkName "p") (getSignatures inputs)
+    getSignatures :: [AST.Input] -> Q Pat
+    getSignatures [AST.Input _ t] = sigP wildP (return $ mkType t)
+    getSignatures [] = sigP wildP (tupleT 0)
+    getSignatures inputs = tupP $ P.map (\(AST.Input _ t) -> sigP wildP (return $ mkType t)) inputs
+
 
 -- TODO: apply inputs here
 runQuery :: input -> Query input output -> Surreal output
