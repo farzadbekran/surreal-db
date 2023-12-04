@@ -432,7 +432,8 @@ instance HasInput Object where
       fs
 
 data RecordID
-  = RecordID TableName ID | RecordIDInput Input
+  = RecordID TableName ID
+  | RecordIDInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL RecordID where
@@ -448,15 +449,17 @@ data ID
   | NumID Int64
   | ObjID Object
   | TupID [Exp]
+  | RandomID FNName
   | IDInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL ID where
   toQL = \case
-    TextID t -> t
+    TextID t -> "`" <> t <> "`"
     NumID i -> tshow i
     ObjID o -> toQL o
     TupID es -> prepText $ ["["] <> intersperse "," (map toQL es) <> ["]"]
+    RandomID (FNName fnName) -> fnName <> "()"
     IDInput i -> toQL i
 
 instance HasInput ID where
@@ -464,6 +467,22 @@ instance HasInput ID where
   getInputs (TupID es) = concatMap getInputs es
   getInputs (IDInput i) = [i]
   getInputs _ = []
+
+data IDRange
+  = IDRangeGT ID
+  | IDRangeLT ID
+  | IDRangeBetween ID ID
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL IDRange where
+  toQL (IDRangeLT i) = ".." <> toQL i
+  toQL (IDRangeGT i) = toQL i <> ".."
+  toQL (IDRangeBetween i1 i2) = toQL i1 <> ".." <> toQL i2
+
+instance HasInput IDRange where
+  getInputs (IDRangeGT i) = getInputs i
+  getInputs (IDRangeLT i) = getInputs i
+  getInputs (IDRangeBetween i1 i2) = getInputs i1 <> getInputs i2
 
 data Literal
   = NoneL
@@ -477,6 +496,7 @@ data Literal
   | ObjectL Object
   | ArrayL [Exp]
   | RecordIDL RecordID
+  | RecordIDRangeL TableName IDRange
   | FutureL Exp
   | LiteralInput Input
   deriving (Eq, Generic, Read, Show)
@@ -501,6 +521,7 @@ instance ToQL Literal where
       <> frmt _ms "ms"
       <> frmt _us "us"
       <> frmt _ns "ns"
+    RecordIDRangeL t range -> toQL t <> ":" <> toQL range
     LiteralInput i -> toQL i
     _ -> "unimplemented!" -- TODO: finish this!
 
@@ -510,6 +531,7 @@ instance HasInput Literal where
     ArrayL es -> concatMap getInputs es
     RecordIDL i -> getInputs i
     FutureL e -> getInputs e
+    RecordIDRangeL t range -> getInputs t <> getInputs range
     LiteralInput i -> [i]
     _ -> []
 

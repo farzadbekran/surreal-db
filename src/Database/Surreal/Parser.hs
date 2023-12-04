@@ -61,7 +61,7 @@ parseType = lexeme $ maybeBetweenParens simpleType
 
 -- | Input
 input :: Parser Input
-input = label "Input" $ lexeme $ do
+input = label "Input" $ lexeme $ maybeBetweenParens $ do
   _ <- char '%'
   i <- lexeme intParser
   _ <- lexeme (symbol "::")
@@ -140,6 +140,112 @@ durationL = label "Duration" $ lexeme $ do
 literalInput :: Parser Literal
 literalInput = label "LiteralInput" $ lexeme $ LiteralInput <$> input
 
+textID :: Parser ID
+textID = label "TextID" $ lexeme $ do
+  t <- pack <$> between (char '`') (char '`') (takeWhileP Nothing (/= '`'))
+       <|> pack <$> between (char '⟨') (char '⟩') (takeWhileP Nothing (/= '⟩'))
+       <|> pack <$> some alphaNumChar
+  return $ TextID t
+
+numID :: Parser ID
+numID = label "numID" $ lexeme $ do
+  i <- intParser
+  -- just making sure the next char is not a alphabetic Char
+  -- oterwise it messes with the textID parser
+  space1 <|> eof
+  return $ NumID i
+
+objID :: Parser ID
+objID = label "objID" $ lexeme $ ObjID <$> object_
+
+objectField :: Parser (Field, Exp)
+objectField = label "objectField" $ lexeme $ do
+  f <- lexeme $ between (char '"') (char '"') field
+  _ <- lexeme $ symbol ":"
+  e <- exp
+  return (f,e)
+
+object_ :: Parser Object
+object_ = label "Object" $ lexeme $ do
+  fields <- between (char '{') (char '}') $ sepBy objectField (lexeme $ char ',')
+  return $ Object fields
+
+tupID :: Parser ID
+tupID = label "tupID" $ lexeme
+  $ TupID <$> between (char '[') (char ']')
+  (sepBy exp (lexeme $ char ','))
+
+randomID :: Parser ID
+randomID = label "randomID" $ lexeme $ choice
+  [ caseInsensitiveSymbol "rand()" $> RandomID (FNName "rand")
+  , caseInsensitiveSymbol "ulid()" $> RandomID (FNName "ulid")
+  , caseInsensitiveSymbol "uuid()" $> RandomID (FNName "uuid")
+  ]
+
+idInput :: Parser ID
+idInput = label "idInput" $ lexeme $ IDInput <$> input
+
+id_ :: Parser ID
+id_ = label "ID" $ choice $ map try
+  [ randomID
+  , numID
+  , textID
+  , objID
+  , tupID
+  , idInput
+  ]
+
+normalRecordID :: Parser RecordID
+normalRecordID = label "normalRecordID" $ lexeme $ do
+  tn <- tableName
+  _ <- symbol ":"
+  RecordID tn <$> id_
+
+recordIDInput :: Parser RecordID
+recordIDInput = label "recordIDInput" $ lexeme $ RecordIDInput <$> input
+
+recordID :: Parser RecordID
+recordID = label "RecordID" $ lexeme $ choice
+  [ normalRecordID
+  , recordIDInput
+  ]
+
+recordIDL :: Parser Literal
+recordIDL = label "RecordIDL" $ lexeme $ RecordIDL <$> recordID
+
+idRangeLT :: Parser IDRange
+idRangeLT = label "idRangeLT" $ do
+  _ <- string ".."
+  IDRangeLT <$> id_
+
+idRangeGT :: Parser IDRange
+idRangeGT = label "idRangeGT" $ do
+  i <- id_
+  _ <- string ".."
+  return $ IDRangeGT i
+
+idRangeBetween :: Parser IDRange
+idRangeBetween = label "idRangeBetween" $ do
+  i1 <- id_
+  _ <- string ".."
+  IDRangeBetween i1 <$> id_
+
+idRange :: Parser IDRange
+idRange = label "IDRange" $ lexeme $ choice $ map try
+  [ idRangeBetween
+  , idRangeGT
+  , idRangeLT
+  ]
+
+recordIDRangeL :: Parser Literal
+recordIDRangeL = label "recordIDRageL" $ lexeme $ do
+  tn <- tableName
+  _ <- string ":"
+  RecordIDRangeL tn <$> idRange
+
+objectL :: Parser Literal
+objectL = label "objectL" $ lexeme $ ObjectL <$> object_
+
 -- | TODO: add missing types like object
 literal :: Parser Literal
 literal = lexeme $ maybeBetweenParens $ choice $ map try
@@ -151,6 +257,9 @@ literal = lexeme $ maybeBetweenParens $ choice $ map try
   , floatL
   , textL
   , int64L
+  , recordIDRangeL
+  , recordIDL
+  , objectL
   , literalInput
   ]
 
@@ -175,7 +284,7 @@ filteredField = label "FilteredField" $ lexeme $ betweenParens $ do
   FilteredField f <$> where_
 
 fieldInput :: Parser Field
-fieldInput = label "FieldInpur" $ FieldInput <$> input
+fieldInput = label "FieldInput" $ FieldInput <$> input
 
 fieldOperatorTable :: [[E.Operator Parser Field]]
 fieldOperatorTable = [ [ E.Postfix indexedField
