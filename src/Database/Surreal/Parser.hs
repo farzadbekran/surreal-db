@@ -246,7 +246,18 @@ recordIDRangeL = label "recordIDRageL" $ lexeme $ do
 objectL :: Parser Literal
 objectL = label "objectL" $ lexeme $ ObjectL <$> object_
 
--- | TODO: add missing types like object
+arrayL :: Parser Literal
+arrayL = label "arrayL" $ lexeme $ do
+  es <- between (char '[') (char ']') $ sepBy exp (char ',')
+  return $ ArrayL es
+
+futureL :: Parser Literal
+futureL = label "futureL" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "<future>"
+  e <- between (char '{') (char '}') exp
+  return $ FutureL e
+
+-- | TODO: add missing types like location/coordinates
 literal :: Parser Literal
 literal = lexeme $ maybeBetweenParens $ choice $ map try
   [ noneL
@@ -260,6 +271,8 @@ literal = lexeme $ maybeBetweenParens $ choice $ map try
   , recordIDRangeL
   , recordIDL
   , objectL
+  , arrayL
+  , futureL
   , literalInput
   ]
 

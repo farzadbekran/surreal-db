@@ -523,7 +523,10 @@ instance ToQL Literal where
       <> frmt _ns "ns"
     RecordIDRangeL t range -> toQL t <> ":" <> toQL range
     LiteralInput i -> toQL i
-    _ -> "unimplemented!" -- TODO: finish this!
+    ArrayL es -> "[" <> foldl1 (<>) (intersperse "," (map toQL es)) <> "]"
+    ObjectL o -> toQL o
+    RecordIDL i -> toQL i
+    FutureL e -> "<future> {" <> toQL e <> "}"
 
 instance HasInput Literal where
   getInputs = \case
