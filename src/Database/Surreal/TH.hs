@@ -68,6 +68,16 @@ getExpResultDecoder e = do
                              Nothing -> P.throwIO $ DecodeError "Select Decoder: missing 'result' key in object!"
              v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: " <> show v)
        |]
+    AST.TypedE {} -> do
+      [| (\case
+             (Object r) -> case r !? "result" of
+                             Just r1 -> do
+                               case fromJSON @[$(return t)] r1 of
+                                 Aeson.Success r2 -> return r2
+                                 Aeson.Error err  -> P.throwIO $ DecodeError err
+                             Nothing -> P.throwIO $ DecodeError "Select Decoder: missing 'result' key in object!"
+             v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: " <> show v)
+       |]
     _ -> fail "unimplemented decoder!"
 
 -- TODO: add support for return statement
@@ -122,7 +132,8 @@ applyInput input (Query q encoder _) = do
 runQuery :: input -> Query input output -> Surreal output
 runQuery input query@(Query _ _ decoder) = do
   q <- applyInput input query
-  RPC.Response { RPC.result = result, RPC.error = err } <- RPC.send "query" [String q]
+  r@RPC.Response { RPC.result = result, RPC.error = err } <- RPC.send "query" [String q]
+  print r
   case err of
     Just e  -> P.throwIO e
     Nothing -> decoder $ fromMaybe Null result

@@ -279,8 +279,8 @@ literal = lexeme $ maybeBetweenParens $ choice $ map try
 simpleField :: Parser Field
 simpleField = label "SimpleField" $ lexeme $ do
   initial <- satisfy isAlpha
-  rest <- some $ satisfy isValidIdentifierChar
-  return $ SimpleField $ pack $ initial : rest
+  rest <- optional $ some $ satisfy isValidIdentifierChar
+  return $ SimpleField $ pack $ initial : fromMaybe "" rest
 
 indexedField :: Parser (Field -> Field)
 indexedField = label "IndexedField" $ lexeme $ do
@@ -327,8 +327,8 @@ fnName = label "FNName" $ lexeme $ do
   where
     partParser = do
       initial <- satisfy isAlpha
-      rest <- some $ satisfy isValidIdentifierChar
-      return $ initial : rest
+      rest <- optional $ some $ satisfy isValidIdentifierChar
+      return $ initial : fromMaybe "" rest
 
 appE :: Parser Exp
 appE = label "AppE" $ lexeme $ do
@@ -561,9 +561,49 @@ selectE = label "SelectE" $ lexeme $ do
   mExplain <- optional explain
   return $ SelectE mValue sels mOmit from_ mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain
 
+onDuplicate :: Parser OnDuplicate
+onDuplicate = label "onDuplicate" $ lexeme $ do
+  _ <- mapM caseInsensitiveSymbol ["ON", "DUPLICATE", "KEY", "UPDATE"]
+  es <- sepBy exp (char ',')
+  return $ OnDuplicate es
+
+insertObject :: Parser InsertVal
+insertObject = label "insertObject" $ lexeme $ InsertObject <$> object_
+
+insertValues :: Parser InsertVal
+insertValues = label "insertValues" $ lexeme $ do
+  fs <- lexeme $ betweenParens $ sepBy field (char ',')
+  _ <- caseInsensitiveSymbol "VALUES"
+  vs <- sepBy tupleParser (char ',')
+  mOnDuplicate <- optional onDuplicate
+  return $ InsertValues fs vs mOnDuplicate
+  where
+    tupleParser = lexeme $ betweenParens $ sepBy exp (char ',')
+
+insertVal :: Parser InsertVal
+insertVal = label "insertVal" $ lexeme $ choice
+  [ insertObject
+  , insertValues
+  ]
+
+insertE :: Parser Exp
+insertE = label "insertE" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "INSERT"
+  mIgnore <- optional $ caseInsensitiveSymbol "IGNORE" $> IGNORE
+  _ <- caseInsensitiveSymbol "INTO"
+  tn <- tableName
+  InsertE mIgnore tn <$> insertVal
+
+typedExp :: Parser (Exp -> Exp)
+typedExp = do
+  _ <- lexeme $ symbol "::"
+  t <- parseType
+  return (`TypedE` t)
+
 -- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
-operatorTable = [ [ E.InfixN (symbol "**" $> OPE (:**))
+operatorTable = [ [ E.Postfix typedExp
+                  , E.InfixN (symbol "**" $> OPE (:**))
                   , E.InfixN (symbol "??" $> OPE (:??))
                   , E.InfixN (symbol "?:" $> OPE (:?:))
                   , E.InfixN (symbol "==" $> OPE (:==))
@@ -575,6 +615,8 @@ operatorTable = [ [ E.InfixN (symbol "**" $> OPE (:**))
                   , E.InfixN (symbol "*~" $> OPE (:*~))
                   , E.InfixN (symbol "<=" $> OPE (:<=))
                   , E.InfixN (symbol ">=" $> OPE (:>=))
+                  , E.InfixN (symbol "+=" $> OPE (:+=))
+                  , E.InfixN (symbol "-=" $> OPE (:-=))
                   , E.InfixN (symbol ">" $> OPE (:>))
                   , E.InfixN (symbol "+" $> OPE (:+))
                   , E.InfixN (symbol "-" $> OPE (:-))
@@ -608,15 +650,16 @@ exp = E.makeExprParser term operatorTable
 
 term :: Parser Exp
 term = sc
-  >> lexeme (choice
+  >> lexeme (choice $ map try
               [ paramE
               , inputE
               , ifThenE
               , ifThenElseE
               , selectE
-              , try appE
-              , try litE
-              , try constE
+              , insertE
+              , appE
+              , litE
+              , constE
               , betweenParens exp
               ])
 

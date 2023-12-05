@@ -50,6 +50,8 @@ data Operator
   | (:*)
   | (:/)
   | (:**)
+  | (:+=)
+  | (:-=)
   | IN
   | NOTIN
   | CONTAINS
@@ -91,6 +93,8 @@ instance ToQL Operator where
     (:*) -> "*"
     (:/) -> "/"
     (:**) -> "**"
+    (:+=) -> "+="
+    (:-=) -> "-="
     IN -> "IN"
     NOTIN -> "NOTIN"
     CONTAINS -> "CONTAINS"
@@ -421,7 +425,7 @@ newtype Object
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Object where
-  toQL (Object fs) = prepText $ "{" : map renderField fs <> ["}"]
+  toQL (Object fs) = prepText $ "{" : intersperse "," (map renderField fs) <> ["}"]
     where
       renderField :: (Field, Exp) -> Text
       renderField (f, e) = toQL f <> ": " <> toQL e
@@ -506,7 +510,7 @@ instance ToQL Literal where
     NoneL -> "NONE"
     NullL -> "Null"
     BoolL b -> if b then "true" else "false"
-    TextL t -> t
+    TextL t -> "'" <> t <> "'"
     Int64L i64 -> (pack . show) i64
     FloatL f -> (pack . show) f
     DateTimeL dt -> pack $ formatISO8601 dt
@@ -544,6 +548,48 @@ data Input = Input Int64 TypeDef
 instance ToQL Input where
   toQL (Input i _) = "%" <> tshow i
 
+data IGNORE = IGNORE
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL IGNORE where
+  toQL IGNORE = "IGNORE"
+
+newtype OnDuplicate = OnDuplicate [Exp]
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL OnDuplicate where
+  toQL (OnDuplicate es) = foldl1 (<>) $ intersperse "," $ map toQL es
+
+instance HasInput OnDuplicate where
+  getInputs (OnDuplicate es) = concatMap getInputs es
+
+data InsertVal
+  = InsertObject Object
+  | InsertValues [Field] [[Exp]] (Maybe OnDuplicate)
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL InsertVal where
+  toQL (InsertObject o) = toQL o
+  toQL (InsertValues fs es od)
+    = "(" <> foldl1 (<>) (intersperse "," $ map toQL fs) <> ")"
+    <> " VALUES "
+    <> foldl1 (<>) (intersperse "," $ map renderTuple es)
+    <> case od of
+         Just (OnDuplicate es')
+           -> " ON DUPLICATE KEY UPDATE "
+           <> foldl1 (<>) (intersperse "," $ map toQL es')
+         Nothing -> ""
+    where
+      renderTuple :: [Exp] -> Text
+      renderTuple exps = "(" <> foldl1 (<>) (intersperse "," $ map toQL exps) <> ")"
+
+instance HasInput InsertVal where
+  getInputs (InsertObject o) = getInputs o
+  getInputs (InsertValues fs es od)
+    = concatMap getInputs fs
+    <> concatMap (concatMap getInputs) es
+    <> maybe [] getInputs od
+
 data Exp
   = TypedE Exp TypeDef
   | OPE Operator Exp Exp
@@ -555,6 +601,7 @@ data Exp
   | IfThenE Exp Exp
   | IfThenElseE Exp Exp Exp
   | SelectE (Maybe VALUE) Selectors (Maybe OMIT) FROM (Maybe WHERE) (Maybe SPLIT) (Maybe GROUP) (Maybe ORDER) (Maybe LIMIT) (Maybe START) (Maybe FETCH) (Maybe TIMEOUT) (Maybe PARALLEL) (Maybe EXPLAIN)
+  | InsertE (Maybe IGNORE) TableName InsertVal
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Exp where
@@ -589,6 +636,13 @@ instance ToQL Exp where
                , renderIfJust mTimeout
                , renderIfJust mParallel
                , renderIfJust mExplain
+               ]
+    InsertE mIgnore tableName insertVal ->
+      prepText [ "INSERT"
+               , renderIfJust mIgnore
+               , "INTO"
+               , toQL tableName
+               , toQL insertVal
                ]
 
 instance HasInput Exp where

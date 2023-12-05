@@ -18,6 +18,7 @@ import           Database.Surreal.TH
 import           Database.Surreal.WS.RPC.Surreal as RPC
 
 type TestRecType = Rec ("category" .== Text)
+type TestRecType2 = Rec ("id" .== Text .+ "name" .== Text .+ "fname" .== Text)
 
 test :: IO ()
 test = do
@@ -31,6 +32,31 @@ test = do
               limit 2
               fetch cat;
               --select 1 + 2 as ppp :: Int from artist limit 1;
+              |]
+    print t
+    runQuery () q
+  print res
+
+insertTest :: IO ()
+insertTest = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q@(Query t _ _) =
+          [sql|
+              (INSERT INTO test (id,name,fname) VALUES ("test:farzad","farzad","bekran")
+                ON DUPLICATE KEY UPDATE numUpdate += 1) :: TestRecType2;
+              |]
+    print t
+    runQuery () q
+  print res
+
+insertTest2 :: IO ()
+insertTest2 = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q@(Query t _ _) =
+          [sql|
+              INSERT INTO test {"name" : "farzad", "fname" : "bekran"} :: TestRecType2;
               |]
     print t
     runQuery () q
