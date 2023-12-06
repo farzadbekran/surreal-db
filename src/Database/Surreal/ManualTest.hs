@@ -61,7 +61,7 @@ insertTest = do
   res <- RPC.runSurreal connState $ do
     let q@(Query t _ _) =
           [sql|
-              (INSERT INTO test (id, name, fname) VALUES ("test:farzad", "farzad", "bekran")
+              (INSERT INTO test (id, name, fname) VALUES (test:uuid(), "farzad", "bekran"), ("test:farzad2", "farzad2", "bekran2")
                 ON DUPLICATE KEY UPDATE numUpdate += 1) :: Vector TestRecType3;
               |]
     print t
@@ -74,7 +74,19 @@ insertTest2 = do
   res <- RPC.runSurreal connState $ do
     let q@(Query t _ _) =
           [sql|
-              INSERT INTO test {"name" : "farzad", "fname" : "bekran"} :: Vector TestRecType3;
+              INSERT INTO test { name : "farzad", fname : "bekran" } :: Vector TestRecType3;
+              |]
+    print t
+    runQuery () q
+  print res
+
+insertTest3 :: IO ()
+insertTest3 = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q@(Query t _ _) =
+          [sql|
+              INSERT INTO test [{id : test:uuid(), name : "farzad", fname : "bekran" },{ name : "farzad2", fname : "bekran2" }] :: Vector TestRecType3;
               |]
     print t
     runQuery () q

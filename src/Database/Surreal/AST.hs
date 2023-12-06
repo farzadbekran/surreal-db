@@ -564,12 +564,12 @@ instance HasInput OnDuplicate where
   getInputs (OnDuplicate es) = concatMap getInputs es
 
 data InsertVal
-  = InsertObject Object
+  = InsertObjects [Object]
   | InsertValues [Field] [[Exp]] (Maybe OnDuplicate)
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL InsertVal where
-  toQL (InsertObject o) = toQL o
+  toQL (InsertObjects os) = "[" <> foldl1 (<>) (intersperse "," $ map toQL os) <> "]"
   toQL (InsertValues fs es od)
     = "(" <> foldl1 (<>) (intersperse "," $ map toQL fs) <> ")"
     <> " VALUES "
@@ -584,7 +584,7 @@ instance ToQL InsertVal where
       renderTuple exps = "(" <> foldl1 (<>) (intersperse "," $ map toQL exps) <> ")"
 
 instance HasInput InsertVal where
-  getInputs (InsertObject o) = getInputs o
+  getInputs (InsertObjects os) = concatMap getInputs os
   getInputs (InsertValues fs es od)
     = concatMap getInputs fs
     <> concatMap (concatMap getInputs) es

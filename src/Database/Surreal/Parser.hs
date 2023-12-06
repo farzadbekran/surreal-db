@@ -160,14 +160,14 @@ objID = label "objID" $ lexeme $ ObjID <$> object_
 
 objectField :: Parser (Field, Exp)
 objectField = label "objectField" $ lexeme $ do
-  f <- lexeme $ between (char '"') (char '"') field
+  f <- lexeme $ field <|> between (char '"') (char '"') field
   _ <- lexeme $ symbol ":"
   e <- exp
   return (f,e)
 
 object_ :: Parser Object
 object_ = label "Object" $ lexeme $ do
-  fields <- between (char '{') (char '}') $ sepBy objectField (lexeme $ char ',')
+  fields <- between (lexeme $ char '{') (lexeme $ char '}') $ sepBy objectField (lexeme $ char ',')
   return $ Object fields
 
 tupID :: Parser ID
@@ -568,7 +568,10 @@ onDuplicate = label "onDuplicate" $ lexeme $ do
   return $ OnDuplicate es
 
 insertObject :: Parser InsertVal
-insertObject = label "insertObject" $ lexeme $ InsertObject <$> object_
+insertObject = label "insertObject" $ lexeme $ do
+  os <- (:[]) <$> object_
+        <|> between (lexeme $ char '[') (lexeme $ char ']') (sepBy object_ (lexeme $ char ','))
+  return $ InsertObjects os
 
 insertValues :: Parser InsertVal
 insertValues = label "insertValues" $ lexeme $ do
