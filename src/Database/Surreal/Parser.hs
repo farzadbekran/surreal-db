@@ -597,6 +597,57 @@ insertE = label "insertE" $ lexeme $ do
   tn <- tableName
   InsertE mIgnore tn <$> insertVal
 
+createTarget :: Parser CreateTarget
+createTarget = label "createTarget" $ lexeme $ choice
+  [ CreateTargetTable <$> tableName
+  , CreateTargetRecID <$> recordID
+  ]
+
+createObject :: Parser CreateVal
+createObject = label "createObject" $ lexeme $ do
+  _ <- lexeme $ caseInsensitiveSymbol "CONTENT"
+  CreateObject <$> object_
+
+createValues :: Parser CreateVal
+createValues = label "createValues" $ lexeme $ do
+  _ <- lexeme $ caseInsensitiveSymbol "SET"
+  fields <- sepBy parseField (lexeme $ char ',')
+  return $ CreateValues fields
+  where
+    parseField = do
+      f <- field
+      _ <- lexeme $ char '='
+      e <- exp
+      return (f,e)
+
+createVal :: Parser CreateVal
+createVal = label "createVal" $ lexeme $ choice
+  [ createObject
+  , createValues
+  ]
+
+createReturn :: Parser CreateReturn
+createReturn = label "createReturn" $ lexeme
+  $ caseInsensitiveSymbol "RETURN"
+  >> choice (map try
+             [ caseInsensitiveSymbol "NONE" $> CRNone
+             , caseInsensitiveSymbol "BEFORE" $> CRBefore
+             , caseInsensitiveSymbol "AFTER" $> CRAfter
+             , caseInsensitiveSymbol "DIFF" $> CRDiff
+             , CRProjections <$> selectors
+             ])
+
+createE :: Parser Exp
+createE = label "createE" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "CREATE"
+  mOnly <- optional $ caseInsensitiveSymbol "ONLY" $> ONLY
+  target <- createTarget
+  val <- createVal
+  mReturn <- optional createReturn
+  mTimeout <- optional timeout
+  mParallel <- optional parallel
+  return $ CreateE mOnly target val mReturn mTimeout mParallel
+
 typedExp :: Parser (Exp -> Exp)
 typedExp = do
   _ <- lexeme $ symbol "::"
@@ -660,6 +711,7 @@ term = sc
               , ifThenElseE
               , selectE
               , insertE
+              , createE
               , appE
               , litE
               , constE

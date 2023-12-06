@@ -19,7 +19,7 @@ import           Database.Surreal.WS.RPC.Surreal as RPC
 
 type TestRecType = Rec ("category" .== Text)
 type TestRecType2 = Rec ("id" .== Text .+ "cat" .== Vector TestRecType)
-type TestRecType3 = Rec ("id" .== Text .+ "name" .== Text .+ "fname" .== Text)
+type TestRecType3 = Rec ("id" .== Text .+ "name" .== Text .+ "fname" .== Maybe Text)
 
 test :: IO ()
 test = do
@@ -61,11 +61,11 @@ insertTest = do
   res <- RPC.runSurreal connState $ do
     let q@(Query t _ _) =
           [sql|
-              (INSERT INTO test (id, name, fname) VALUES (test:uuid(), "farzad", "bekran"), ("test:farzad2", "farzad2", "bekran2")
+              (INSERT INTO test (id, name, fname) VALUES (test:uuid(), %1 :: Text, %2 :: Text), ("test:farzad2", "farzad2", "bekran2")
                 ON DUPLICATE KEY UPDATE numUpdate += 1) :: Vector TestRecType3;
               |]
     print t
-    runQuery () q
+    runQuery ("inputval1","inputval \" 2") q
   print res
 
 insertTest2 :: IO ()
@@ -87,6 +87,42 @@ insertTest3 = do
     let q@(Query t _ _) =
           [sql|
               INSERT INTO test [{id : test:uuid(), name : "farzad", fname : "bekran" },{ name : "farzad2", fname : "bekran2" }] :: Vector TestRecType3;
+              |]
+    print t
+    runQuery () q
+  print res
+
+createTest1 :: IO ()
+createTest1 = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q@(Query t _ _) =
+          [sql|
+              (CREATE test CONTENT {name: "farzad create", fname: "bekran"}) :: Vector TestRecType3;
+              |]
+    print t
+    runQuery () q
+  print res
+
+createTest2 :: IO ()
+createTest2 = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q@(Query t _ _) =
+          [sql|
+              (CREATE test SET name = "farzad create2", fname = "bekran") :: Vector TestRecType3;
+              |]
+    print t
+    runQuery () q
+  print res
+
+createTest3 :: IO ()
+createTest3 = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q@(Query t _ _) =
+          [sql|
+              (CREATE test SET name = "farzad create3", fname = "bekran" RETURN id, name, fname) :: Vector TestRecType3;
               |]
     print t
     runQuery () q

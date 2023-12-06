@@ -1,5 +1,5 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE LambdaCase    #-}
+{-# LANGUAGE DeriveGeneric   #-}
+{-# LANGUAGE LambdaCase      #-}
 
 {-# OPTIONS_GHC -Wno-deriving-defaults #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -7,7 +7,7 @@
 module Database.Surreal.AST where
 
 import           ClassyPrelude
-import           Data.Foldable (foldl1)
+import           Data.Foldable     ( foldl1 )
 import qualified Data.Text         as T
 import           Data.Time.ISO8601 ( formatISO8601 )
 
@@ -27,46 +27,7 @@ newtype FNName
   = FNName Text
   deriving (Eq, Generic, Read, Show)
 
-data Operator
-  = (:&&)
-  | (:||)
-  | (:??)
-  | (:?:)
-  | (:=)
-  | (:!=)
-  | (:==)
-  | (:?=)
-  | (:*=)
-  | (:~)
-  | (:!~)
-  | (:?~)
-  | (:*~)
-  | (:<)
-  | (:<=)
-  | (:>)
-  | (:>=)
-  | (:+)
-  | (:-)
-  | (:*)
-  | (:/)
-  | (:**)
-  | (:+=)
-  | (:-=)
-  | IN
-  | NOTIN
-  | CONTAINS
-  | CONTAINSNOT
-  | CONTAINSALL
-  | CONTAINSANY
-  | CONTAINSNONE
-  | INSIDE
-  | NOTINSIDE
-  | ALLINSIDE
-  | ANYINSIDE
-  | NONEINSIDE
-  | OUTSIDE
-  | INTERSECTS
-  | (:@@)
+data Operator = (:&&) | (:||) | (:??) | (:?:) | (:=) | (:!=) | (:==) | (:?=) | (:*=) | (:~) | (:!~) | (:?~) | (:*~) | (:<) | (:<=) | (:>) | (:>=) | (:+) | (:-) | (:*) | (:/) | (:**) | (:+=) | (:-=) | IN | NOTIN | CONTAINS | CONTAINSNOT | CONTAINSALL | CONTAINSANY | CONTAINSNONE | INSIDE | NOTINSIDE | ALLINSIDE | ANYINSIDE | NONEINSIDE | OUTSIDE | INTERSECTS | (:@@)
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Operator where
@@ -114,7 +75,8 @@ instance ToQL Operator where
 type Namespace = Text
 type Database = Text
 
-data TypeDef = T String [ TypeDef ]
+data TypeDef
+  = T String [TypeDef]
   deriving (Eq, Generic, Read, Show)
 
 data USE
@@ -158,11 +120,11 @@ data Edge
 
 instance ToQL Edge where
   toQL (OutEdge f) = "->" <> toQL f
-  toQL (InEdge f) = "<-" <> toQL f
+  toQL (InEdge f)  = "<-" <> toQL f
 
 instance HasInput Edge where
   getInputs (OutEdge f) = getInputs f
-  getInputs (InEdge f) = getInputs f
+  getInputs (InEdge f)  = getInputs f
 
 data Selector
   = FieldSelector Field
@@ -220,6 +182,9 @@ instance ToQL OMIT where
 
 data ONLY = ONLY
   deriving (Eq, Generic, Read, Show)
+
+instance ToQL ONLY where
+  toQL ONLY = "ONLY"
 
 type IndexName = Text -- do we need to improve this?
 
@@ -289,7 +254,11 @@ instance ToQL GROUP where
 instance HasInput GROUP where
   getInputs (GROUP fs) = concatMap getInputs fs
 
-data OrderType = RAND | COLLATE | NUMERIC | OrderTypeInput Input
+data OrderType
+  = RAND
+  | COLLATE
+  | NUMERIC
+  | OrderTypeInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL OrderType where
@@ -301,9 +270,12 @@ instance ToQL OrderType where
 
 instance HasInput OrderType where
   getInputs (OrderTypeInput i) = [i]
-  getInputs _ = []
+  getInputs _                  = []
 
-data OrderDirection = ASC | DESC | OrderDirectionInput Input
+data OrderDirection
+  = ASC
+  | DESC
+  | OrderDirectionInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL OrderDirection where
@@ -314,7 +286,7 @@ instance ToQL OrderDirection where
 
 instance HasInput OrderDirection where
   getInputs (OrderDirectionInput i) = [i]
-  getInputs _ = []
+  getInputs _                       = []
 
 newtype ORDER
   = ORDER [(Field, Maybe OrderType, Maybe OrderDirection)]
@@ -336,28 +308,30 @@ instance HasInput ORDER where
     os
 
 data LIMIT
-  = LIMIT Int64 | LIMITInput Input
+  = LIMIT Int64
+  | LIMITInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL LIMIT where
-  toQL (LIMIT i) = "LIMIT " <> tshow i
+  toQL (LIMIT i)      = "LIMIT " <> tshow i
   toQL (LIMITInput i) = "LIMIT " <> toQL i
 
 instance HasInput LIMIT where
   getInputs (LIMITInput i) = [i]
-  getInputs _ = []
+  getInputs _              = []
 
 data START
-  = START Int64 | STARTInput Input
+  = START Int64
+  | STARTInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL START where
-  toQL (START i) = "START " <> tshow i
+  toQL (START i)      = "START " <> tshow i
   toQL (STARTInput i) = "START " <> toQL i
 
 instance HasInput START where
   getInputs (STARTInput i) = [i]
-  getInputs _ = []
+  getInputs _              = []
 
 newtype FETCH
   = FETCH [Field]
@@ -371,11 +345,12 @@ instance HasInput FETCH where
   getInputs (FETCH fs) = concatMap getInputs fs
 
 data TIMEOUT
-  = TIMEOUT Int64 | TIMEOUTInput Input
+  = TIMEOUT Int64
+  | TIMEOUTInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL TIMEOUT where
-  toQL (TIMEOUT i) = "TIMEOUT " <> tshow i
+  toQL (TIMEOUT i)      = "TIMEOUT " <> tshow i
   toQL (TIMEOUTInput i) = "TIMEOUT " <> toQL i
 
 data PARALLEL = PARALLEL
@@ -388,37 +363,39 @@ data EXPLAIN = EXPLAIN | EXPLAINFULL
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL EXPLAIN where
-  toQL EXPLAIN = "EXPLAIN"
+  toQL EXPLAIN     = "EXPLAIN"
   toQL EXPLAINFULL = "EXPLAINFULL"
 
 -- | duration formats like "1y2w3d", surreal db currently does not support months
 data Duration
-  = Duration { _y :: Int64
-             , _w :: Int64
-             , _d :: Int64
-             , _h :: Int64
-             , _m :: Int64
-             , _s :: Int64
-             , _ms :: Int64
-             , _us :: Int64
-             , _ns :: Int64
-             }
+  = Duration
+      { _y  :: Int64
+      , _w  :: Int64
+      , _d  :: Int64
+      , _h  :: Int64
+      , _m  :: Int64
+      , _s  :: Int64
+      , _ms :: Int64
+      , _us :: Int64
+      , _ns :: Int64
+      }
   deriving (Eq, Generic, Read, Show)
 
 defaultDuration :: Duration
 defaultDuration = Duration 0 0 0 0 0 0 0 0 0
 
 data TableName
-  = TableName Text | TableNameInput Input
+  = TableName Text
+  | TableNameInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL TableName where
-  toQL (TableName t) = t
+  toQL (TableName t)      = t
   toQL (TableNameInput i) = toQL i
 
 instance HasInput TableName where
   getInputs (TableNameInput i) = [i]
-  getInputs _ = []
+  getInputs _                  = []
 
 newtype Object
   = Object [(Field, Exp)]
@@ -441,12 +418,12 @@ data RecordID
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL RecordID where
-  toQL (RecordID t i) = toQL t <> ":" <> toQL i
+  toQL (RecordID t i)    = toQL t <> ":" <> toQL i
   toQL (RecordIDInput i) = toQL i
 
 instance HasInput RecordID where
   getInputs (RecordIDInput i) = [i]
-  getInputs (RecordID t i) = getInputs t <> getInputs i
+  getInputs (RecordID t i)    = getInputs t <> getInputs i
 
 data ID
   = TextID Text
@@ -467,10 +444,10 @@ instance ToQL ID where
     IDInput i -> toQL i
 
 instance HasInput ID where
-  getInputs (ObjID o) = getInputs o
-  getInputs (TupID es) = concatMap getInputs es
+  getInputs (ObjID o)   = getInputs o
+  getInputs (TupID es)  = concatMap getInputs es
   getInputs (IDInput i) = [i]
-  getInputs _ = []
+  getInputs _           = []
 
 data IDRange
   = IDRangeGT ID
@@ -479,13 +456,13 @@ data IDRange
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL IDRange where
-  toQL (IDRangeLT i) = ".." <> toQL i
-  toQL (IDRangeGT i) = toQL i <> ".."
+  toQL (IDRangeLT i)          = ".." <> toQL i
+  toQL (IDRangeGT i)          = toQL i <> ".."
   toQL (IDRangeBetween i1 i2) = toQL i1 <> ".." <> toQL i2
 
 instance HasInput IDRange where
-  getInputs (IDRangeGT i) = getInputs i
-  getInputs (IDRangeLT i) = getInputs i
+  getInputs (IDRangeGT i)          = getInputs i
+  getInputs (IDRangeLT i)          = getInputs i
   getInputs (IDRangeBetween i1 i2) = getInputs i1 <> getInputs i2
 
 data Literal
@@ -542,7 +519,8 @@ instance HasInput Literal where
     LiteralInput i -> [i]
     _ -> []
 
-data Input = Input Int64 TypeDef
+data Input
+  = Input Int64 TypeDef
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Input where
@@ -554,7 +532,8 @@ data IGNORE = IGNORE
 instance ToQL IGNORE where
   toQL IGNORE = "IGNORE"
 
-newtype OnDuplicate = OnDuplicate [Exp]
+newtype OnDuplicate
+  = OnDuplicate [Exp]
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL OnDuplicate where
@@ -590,6 +569,54 @@ instance HasInput InsertVal where
     <> concatMap (concatMap getInputs) es
     <> maybe [] getInputs od
 
+data CreateTarget
+  = CreateTargetTable TableName
+  | CreateTargetRecID RecordID
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL CreateTarget where
+  toQL (CreateTargetTable tn)  = toQL tn
+  toQL (CreateTargetRecID rid) = toQL rid
+
+instance HasInput CreateTarget where
+  getInputs = \case
+    CreateTargetTable tn -> getInputs tn
+    CreateTargetRecID rid -> getInputs rid
+
+data CreateVal
+  = CreateObject Object
+  | CreateValues [(Field, Exp)]
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL CreateVal where
+  toQL (CreateObject o)  = "CONTENT " <> toQL o
+  toQL (CreateValues fields) = prepText $ "SET" : intersperse "," (map renderTuple fields)
+    where
+      renderTuple (f,v) = toQL f <> " = " <> toQL v
+
+instance HasInput CreateVal where
+  getInputs = \case
+    CreateObject o -> getInputs o
+    CreateValues fields -> concatMap getTupleInputs fields
+    where
+      getTupleInputs (f,v) = getInputs f <> getInputs v
+
+data CreateReturn
+  = CRNone
+  | CRBefore
+  | CRAfter
+  | CRDiff
+  | CRProjections Selectors
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL CreateReturn where
+  toQL = \case
+    CRNone -> "RETURN NONE"
+    CRBefore -> "RETURN BEFORE"
+    CRAfter -> "RETURN AFTER"
+    CRDiff -> "RETURN DIFF"
+    CRProjections (Selectors ss) -> "RETURN " <> prepText (intersperse "," $ map toQL ss)
+
 data Exp
   = TypedE Exp TypeDef
   | OPE Operator Exp Exp
@@ -602,6 +629,7 @@ data Exp
   | IfThenElseE Exp Exp Exp
   | SelectE (Maybe VALUE) Selectors (Maybe OMIT) FROM (Maybe WHERE) (Maybe SPLIT) (Maybe GROUP) (Maybe ORDER) (Maybe LIMIT) (Maybe START) (Maybe FETCH) (Maybe TIMEOUT) (Maybe PARALLEL) (Maybe EXPLAIN)
   | InsertE (Maybe IGNORE) TableName InsertVal
+  | CreateE (Maybe ONLY) CreateTarget CreateVal (Maybe CreateReturn) (Maybe TIMEOUT) (Maybe PARALLEL)
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Exp where
@@ -644,6 +672,15 @@ instance ToQL Exp where
                , toQL tableName
                , toQL insertVal
                ]
+    CreateE mOnly target v mReturn mTimeout mParallel ->
+      prepText [ "CREATE"
+               , renderIfJust mOnly
+               , toQL target
+               , toQL v
+               , renderIfJust mReturn
+               , renderIfJust mTimeout
+               , renderIfJust mParallel
+               ]
 
 instance HasInput Exp where
   getInputs = \case
@@ -651,7 +688,9 @@ instance HasInput Exp where
     OPE _ e1 e2 -> getInputs e1 <> getInputs e2
     AppE _ ps -> concatMap getInputs ps
     LitE le -> getInputs le
+    ParamE _ -> []
     InputE i -> [i]
+    ConstE _ -> []
     IfThenE e te -> getInputs e <> getInputs te
     IfThenElseE e te fe -> getInputs e <> getInputs te <> getInputs fe
     SelectE _ selectors _ from mWhere mSplit mGroup mOrder mLimit mStart mFetch _ _ _
@@ -664,7 +703,10 @@ instance HasInput Exp where
       <> maybe [] getInputs mLimit
       <> maybe [] getInputs mStart
       <> maybe [] getInputs mFetch
-    _ -> []
+    InsertE _ tableName insertVal
+      -> getInputs tableName <> getInputs insertVal
+    CreateE _ target v _ _ _
+      -> getInputs target <> getInputs v
 
 data Statement
   = UseS USE
@@ -703,7 +745,7 @@ data SurQLLine
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL SurQLLine where
-  toQL (ExpLine e) = toQL e
+  toQL (ExpLine e)       = toQL e
   toQL (StatementLine s) = toQL s
 
 instance HasInput SurQLLine where
