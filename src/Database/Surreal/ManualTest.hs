@@ -18,7 +18,8 @@ import           Database.Surreal.TH
 import           Database.Surreal.WS.RPC.Surreal as RPC
 
 type TestRecType = Rec ("category" .== Text)
-type TestRecType2 = Rec ("id" .== Text .+ "name" .== Text .+ "fname" .== Text)
+type TestRecType2 = Rec ("id" .== Text .+ "cat" .== Vector TestRecType)
+type TestRecType3 = Rec ("id" .== Text .+ "name" .== Text .+ "fname" .== Text)
 
 test :: IO ()
 test = do
@@ -37,14 +38,31 @@ test = do
     runQuery () q
   print res
 
+test2 :: IO ()
+test2 = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q@(Query t _ _) =
+          [sql|
+              (select id, ->create->product AS cat
+              from artist:00b2pg847d7b8r08t08t..
+              --where name = %1 :: Text && fname = %2 :: Int64
+              limit 2
+              fetch cat) :: (Vector TestRecType2);
+              --select 1 + 2 as ppp :: Int from artist limit 1;
+              |]
+    print t
+    runQuery () q
+  print res
+
 insertTest :: IO ()
 insertTest = do
   connState <- RPC.connect RPC.defaultConnectionInfo
   res <- RPC.runSurreal connState $ do
     let q@(Query t _ _) =
           [sql|
-              (INSERT INTO test (id,name,fname) VALUES ("test:farzad","farzad","bekran")
-                ON DUPLICATE KEY UPDATE numUpdate += 1) :: TestRecType2;
+              (INSERT INTO test (id, name, fname) VALUES ("test:farzad", "farzad", "bekran")
+                ON DUPLICATE KEY UPDATE numUpdate += 1) :: Vector TestRecType3;
               |]
     print t
     runQuery () q
@@ -56,7 +74,7 @@ insertTest2 = do
   res <- RPC.runSurreal connState $ do
     let q@(Query t _ _) =
           [sql|
-              INSERT INTO test {"name" : "farzad", "fname" : "bekran"} :: TestRecType2;
+              INSERT INTO test {"name" : "farzad", "fname" : "bekran"} :: Vector TestRecType3;
               |]
     print t
     runQuery () q

@@ -40,7 +40,7 @@ caseInsensitiveSymbol :: String -> Parser String
 caseInsensitiveSymbol s = label s $ lexeme $ L.symbol' sc s
 
 betweenParens :: Parser a -> Parser a
-betweenParens = between (char '(') (char ')')
+betweenParens = between (lexeme $ char '(') (lexeme $ char ')')
 
 maybeBetweenParens :: Parser a -> Parser a
 maybeBetweenParens p = p <|> betweenParens p
@@ -572,13 +572,13 @@ insertObject = label "insertObject" $ lexeme $ InsertObject <$> object_
 
 insertValues :: Parser InsertVal
 insertValues = label "insertValues" $ lexeme $ do
-  fs <- lexeme $ betweenParens $ sepBy field (char ',')
+  fs <- lexeme $ betweenParens $ sepBy field (lexeme $ char ',')
   _ <- caseInsensitiveSymbol "VALUES"
-  vs <- sepBy tupleParser (char ',')
+  vs <- sepBy tupleParser (lexeme $ char ',')
   mOnDuplicate <- optional onDuplicate
   return $ InsertValues fs vs mOnDuplicate
   where
-    tupleParser = lexeme $ betweenParens $ sepBy exp (char ',')
+    tupleParser = lexeme $ betweenParens $ sepBy exp (lexeme $ char ',')
 
 insertVal :: Parser InsertVal
 insertVal = label "insertVal" $ lexeme $ choice

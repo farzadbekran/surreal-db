@@ -72,7 +72,7 @@ getExpResultDecoder e = do
       [| (\case
              (Object r) -> case r !? "result" of
                              Just r1 -> do
-                               case fromJSON @[$(return t)] r1 of
+                               case fromJSON @($(return t)) r1 of
                                  Aeson.Success r2 -> return r2
                                  Aeson.Error err  -> P.throwIO $ DecodeError err
                              Nothing -> P.throwIO $ DecodeError "Select Decoder: missing 'result' key in object!"
