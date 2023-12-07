@@ -630,6 +630,41 @@ createVal = label "createVal" $ lexeme $ choice
   , createValues
   ]
 
+updateObject :: Parser UpdateVal
+updateObject = label "updateObject" $ lexeme $ do
+  _ <- lexeme $ caseInsensitiveSymbol "CONTENT"
+  UpdateObject <$> object_
+
+updateMerge :: Parser UpdateVal
+updateMerge = label "updateMerge" $ lexeme $ do
+  _ <- lexeme $ caseInsensitiveSymbol "MERGE"
+  UpdateMerge <$> object_
+
+updatePatch :: Parser UpdateVal
+updatePatch = label "updatePatch" $ lexeme $ do
+  _ <- lexeme $ caseInsensitiveSymbol "PATCH"
+  UpdatePatch <$> object_
+
+updateValues :: Parser UpdateVal
+updateValues = label "updateValues" $ lexeme $ do
+  _ <- lexeme $ caseInsensitiveSymbol "SET"
+  fields <- sepBy parseField (lexeme $ char ',')
+  return $ UpdateValues fields
+  where
+    parseField = do
+      f <- field
+      _ <- lexeme $ char '='
+      e <- exp
+      return (f,e)
+
+updateVal :: Parser UpdateVal
+updateVal = label "updateVal" $ lexeme $ choice
+  [ updateObject
+  , updateValues
+  , updateMerge
+  , updatePatch
+  ]
+
 returnType :: Parser ReturnType
 returnType = label "ReturnType" $ lexeme
   $ caseInsensitiveSymbol "RETURN"
@@ -651,6 +686,18 @@ createE = label "createE" $ lexeme $ do
   mTimeout <- optional timeout
   mParallel <- optional parallel
   return $ CreateE mOnly tar val mReturn mTimeout mParallel
+
+updateE :: Parser Exp
+updateE = label "updateE" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "UPDATE"
+  mOnly <- optional $ caseInsensitiveSymbol "ONLY" $> ONLY
+  tar <- target
+  val <- updateVal
+  mWhere <- optional where_
+  mReturn <- optional returnType
+  mTimeout <- optional timeout
+  mParallel <- optional parallel
+  return $ UpdateE mOnly tar val mWhere mReturn mTimeout mParallel
 
 deleteE :: Parser Exp
 deleteE = label "deleteE" $ lexeme $ do
@@ -727,6 +774,7 @@ term = sc
               , selectE
               , insertE
               , createE
+              , updateE
               , deleteE
               , appE
               , litE

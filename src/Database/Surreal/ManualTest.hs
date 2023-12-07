@@ -156,3 +156,17 @@ deleteTest2 = do
     print t
     runQuery rid q
   print res
+
+updateTest1 :: IO ()
+updateTest1 = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let rid = RecordID (TableName "test") (TextID "018c443e-9f59-75f0-848f-dcd2417eb275")
+    print rid
+    let q@(Query t _ _) =
+          [sql|
+              (UPDATE test SET name = "updated Name" where id = (%1 :: RecordID) RETURN NONE) :: ();
+              |]
+    print t
+    runQuery rid q
+  print res

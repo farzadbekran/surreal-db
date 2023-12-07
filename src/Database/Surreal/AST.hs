@@ -613,6 +613,30 @@ instance HasInput CreateVal where
     where
       getTupleInputs (f,v) = getInputs f <> getInputs v
 
+data UpdateVal
+  = UpdateObject Object
+  | UpdateValues [(Field, Exp)]
+  | UpdateMerge Object
+  | UpdatePatch Object
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL UpdateVal where
+  toQL (UpdateObject o)  = "CONTENT " <> toQL o
+  toQL (UpdateMerge o)  = "MERGE " <> toQL o
+  toQL (UpdatePatch o)  = "Patch " <> toQL o
+  toQL (UpdateValues fields) = prepText $ "SET" : intersperse "," (map renderTuple fields)
+    where
+      renderTuple (f,v) = toQL f <> " = " <> toQL v
+
+instance HasInput UpdateVal where
+  getInputs = \case
+    UpdateObject o -> getInputs o
+    UpdateMerge o -> getInputs o
+    UpdatePatch o -> getInputs o
+    UpdateValues fields -> concatMap getTupleInputs fields
+    where
+      getTupleInputs (f,v) = getInputs f <> getInputs v
+
 data ReturnType
   = RTNone
   | RTBefore
@@ -643,6 +667,7 @@ data Exp
   | InsertE (Maybe IGNORE) TableName InsertVal
   | CreateE (Maybe ONLY) Target CreateVal (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
   | DeleteE (Maybe ONLY) Target (Maybe WHERE) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
+  | UpdateE (Maybe ONLY) Target UpdateVal (Maybe WHERE) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Exp where
@@ -694,6 +719,16 @@ instance ToQL Exp where
                , renderIfJust mTimeout
                , renderIfJust mParallel
                ]
+    UpdateE mOnly target v mWhere mReturn mTimeout mParallel ->
+      prepText [ "UPDATE"
+               , renderIfJust mOnly
+               , toQL target
+               , toQL v
+               , renderIfJust mWhere
+               , renderIfJust mReturn
+               , renderIfJust mTimeout
+               , renderIfJust mParallel
+               ]
     DeleteE mOnly target mWhere mReturn mTimeout mParallel ->
       prepText [ "DELETE"
                , renderIfJust mOnly
@@ -729,6 +764,8 @@ instance HasInput Exp where
       -> getInputs tableName <> getInputs insertVal
     CreateE _ target v _ _ _
       -> getInputs target <> getInputs v
+    UpdateE _ target v mWhere _ _ _
+      -> getInputs target <> maybe [] getInputs mWhere <> getInputs v
     DeleteE _ target mWhere _ _ _
       -> getInputs target <> maybe [] getInputs mWhere
 
