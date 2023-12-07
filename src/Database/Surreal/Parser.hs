@@ -152,7 +152,7 @@ numID = label "numID" $ lexeme $ do
   i <- intParser
   -- just making sure the next char is not a alphabetic Char
   -- oterwise it messes with the textID parser
-  space1 <|> eof
+  lookAhead $ space1 <|> (symbol "->" $> ()) <|> (symbol "<-" $> ()) <|> eof
   return $ NumID i
 
 objID :: Parser ID
@@ -601,10 +601,19 @@ insertE = label "insertE" $ lexeme $ do
   tn <- tableName
   InsertE mIgnore tn <$> insertVal
 
+targetEdge :: Parser Target
+targetEdge = label "targetEdge" $ lexeme $ do
+  initialID <- recordID
+  edges <- some edge
+  if null edges
+    then fail "Invalid Edge!"
+    else return $ TargetEdge initialID edges
+
 target :: Parser Target
-target = label "target" $ lexeme $ choice
-  [ TargetTable <$> tableName
+target = label "target" $ lexeme $ choice $ map try
+  [ targetEdge
   , TargetRecID <$> recordID
+  , TargetTable <$> tableName
   ]
 
 createObject :: Parser CreateVal

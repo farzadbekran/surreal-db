@@ -584,16 +584,20 @@ instance HasInput InsertVal where
 data Target
   = TargetTable TableName
   | TargetRecID RecordID
+  | TargetEdge RecordID [Edge]
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Target where
   toQL (TargetTable tn)  = toQL tn
   toQL (TargetRecID rid) = toQL rid
+  toQL (TargetEdge rid es) =
+    foldl1 (<>) $ toQL rid : map toQL es
 
 instance HasInput Target where
   getInputs = \case
     TargetTable tn -> getInputs tn
     TargetRecID rid -> getInputs rid
+    TargetEdge rid es -> getInputs rid <> concatMap getInputs es
 
 data CreateVal
   = CreateObject Object
@@ -663,6 +667,7 @@ data Exp
   | InputE Input
   | IfThenE Exp Exp
   | IfThenElseE Exp Exp Exp
+  -- | SelectorE -- TODO: Finish this!!
   | SelectE (Maybe VALUE) Selectors (Maybe OMIT) FROM (Maybe WHERE) (Maybe SPLIT) (Maybe GROUP) (Maybe ORDER) (Maybe LIMIT) (Maybe START) (Maybe FETCH) (Maybe TIMEOUT) (Maybe PARALLEL) (Maybe EXPLAIN)
   | InsertE (Maybe IGNORE) TableName InsertVal
   | CreateE (Maybe ONLY) Target CreateVal (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)

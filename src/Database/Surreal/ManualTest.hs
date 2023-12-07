@@ -170,3 +170,27 @@ updateTest1 = do
     print t
     runQuery rid q
   print res
+
+updateTest2 :: IO ()
+updateTest2 = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q@(Query t _ _) =
+          [sql|
+              (UPDATE artist:00d3xv269u0x5o37q16u->create->product SET name = "updated Name") :: ();
+              |]
+    print t
+    runQuery () q
+  print res
+
+-- selectTest1 :: IO ()
+-- selectTest1 = do
+--   connState <- RPC.connect RPC.defaultConnectionInfo
+--   res <- RPC.runSurreal connState $ do
+--     let q@(Query t _ _) =
+--           [sql|
+--               (SELECT * FROM person WHERE ->knows->person->(knows WHERE influencer = true) TIMEOUT 5s;) :: Value;
+--               |]
+--     print t
+--     runQuery () q
+--   print res
