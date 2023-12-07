@@ -127,7 +127,8 @@ instance HasInput Edge where
   getInputs (InEdge f)  = getInputs f
 
 data Selector
-  = FieldSelector Field
+  = WildCardSelector
+  | FieldSelector Field
   | ExpSelector Exp Field
   | SelectorAs Selector Field
   | EdgeSelector (Maybe Field) [Edge] Field
@@ -138,7 +139,8 @@ data Selector
 
 instance ToQL Selector where
   toQL = \case
-    FieldSelector f -> prepText [toQL f] -- TODO: remove this to prevent untyped selectors?
+    WildCardSelector -> "*"
+    FieldSelector f -> prepText [toQL f]
     ExpSelector e f ->
       prepText [ toQL e, "AS", toQL f ]
     SelectorAs s fAs ->
@@ -149,6 +151,7 @@ instance ToQL Selector where
 
 instance HasInput Selector where
   getInputs = \case
+    WildCardSelector -> []
     FieldSelector f -> getInputs f
     ExpSelector e f -> getInputs e <> getInputs f
     SelectorAs s fAs -> getInputs s <> getInputs fAs

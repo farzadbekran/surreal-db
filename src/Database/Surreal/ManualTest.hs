@@ -44,7 +44,7 @@ test2 = do
   res <- RPC.runSurreal connState $ do
     let q@(Query t _ _) =
           [sql|
-              (select id, ->create->product AS cat
+              (select *, ->create->product AS cat
               from artist:00b2pg847d7b8r08t08t..
               --where name = %1 :: Text && fname = %2 :: Int64
               limit 2

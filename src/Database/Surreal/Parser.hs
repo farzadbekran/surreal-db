@@ -423,6 +423,9 @@ typedSelector = do
   t <- parseType
   return (`TypedSelector` t)
 
+wildCardSelector :: Parser Selector
+wildCardSelector = label "wildCardSelector" $ lexeme $ symbol "*" $> WildCardSelector
+
 -- order matters here, more specific first, ie ** before *
 selectorOperatorTable :: [[E.Operator Parser Selector]]
 selectorOperatorTable = [ [ E.Postfix selectorAs
@@ -439,6 +442,7 @@ selectorTerm = lexeme $ choice $ map try
   [ fieldSelector
   , expSelector
   , edgeSelector
+  , wildCardSelector
   ]
 
 selectors :: Parser Selectors
