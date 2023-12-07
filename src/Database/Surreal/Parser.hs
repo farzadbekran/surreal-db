@@ -49,7 +49,7 @@ maybeBetweenParens p = p <|> betweenParens p
 
 simpleType :: Parser TypeDef
 simpleType = do
-  prefix <- try $ lexeme parseCapitalWord
+  prefix <- try $ lexeme (parseCapitalWord <|> symbol "()")
   postfix <- many
     $ try
     $ lexeme
@@ -601,10 +601,10 @@ insertE = label "insertE" $ lexeme $ do
   tn <- tableName
   InsertE mIgnore tn <$> insertVal
 
-createTarget :: Parser CreateTarget
-createTarget = label "createTarget" $ lexeme $ choice
-  [ CreateTargetTable <$> tableName
-  , CreateTargetRecID <$> recordID
+target :: Parser Target
+target = label "target" $ lexeme $ choice
+  [ TargetTable <$> tableName
+  , TargetRecID <$> recordID
   ]
 
 createObject :: Parser CreateVal
@@ -630,27 +630,38 @@ createVal = label "createVal" $ lexeme $ choice
   , createValues
   ]
 
-createReturn :: Parser CreateReturn
-createReturn = label "createReturn" $ lexeme
+returnType :: Parser ReturnType
+returnType = label "ReturnType" $ lexeme
   $ caseInsensitiveSymbol "RETURN"
   >> choice (map try
-             [ caseInsensitiveSymbol "NONE" $> CRNone
-             , caseInsensitiveSymbol "BEFORE" $> CRBefore
-             , caseInsensitiveSymbol "AFTER" $> CRAfter
-             , caseInsensitiveSymbol "DIFF" $> CRDiff
-             , CRProjections <$> selectors
+             [ caseInsensitiveSymbol "NONE" $> RTNone
+             , caseInsensitiveSymbol "BEFORE" $> RTBefore
+             , caseInsensitiveSymbol "AFTER" $> RTAfter
+             , caseInsensitiveSymbol "DIFF" $> RTDiff
+             , RTProjections <$> selectors
              ])
 
 createE :: Parser Exp
 createE = label "createE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "CREATE"
   mOnly <- optional $ caseInsensitiveSymbol "ONLY" $> ONLY
-  target <- createTarget
+  tar <- target
   val <- createVal
-  mReturn <- optional createReturn
+  mReturn <- optional returnType
   mTimeout <- optional timeout
   mParallel <- optional parallel
-  return $ CreateE mOnly target val mReturn mTimeout mParallel
+  return $ CreateE mOnly tar val mReturn mTimeout mParallel
+
+deleteE :: Parser Exp
+deleteE = label "deleteE" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DELETE"
+  mOnly <- optional $ caseInsensitiveSymbol "ONLY" $> ONLY
+  tar <- target
+  mWhere <- optional where_
+  mReturn <- optional returnType
+  mTimeout <- optional timeout
+  mParallel <- optional parallel
+  return $ DeleteE mOnly tar mWhere mReturn mTimeout mParallel
 
 typedExp :: Parser (Exp -> Exp)
 typedExp = do
@@ -716,6 +727,7 @@ term = sc
               , selectE
               , insertE
               , createE
+              , deleteE
               , appE
               , litE
               , constE

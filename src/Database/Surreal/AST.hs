@@ -572,19 +572,19 @@ instance HasInput InsertVal where
     <> concatMap (concatMap getInputs) es
     <> maybe [] getInputs od
 
-data CreateTarget
-  = CreateTargetTable TableName
-  | CreateTargetRecID RecordID
+data Target
+  = TargetTable TableName
+  | TargetRecID RecordID
   deriving (Eq, Generic, Read, Show)
 
-instance ToQL CreateTarget where
-  toQL (CreateTargetTable tn)  = toQL tn
-  toQL (CreateTargetRecID rid) = toQL rid
+instance ToQL Target where
+  toQL (TargetTable tn)  = toQL tn
+  toQL (TargetRecID rid) = toQL rid
 
-instance HasInput CreateTarget where
+instance HasInput Target where
   getInputs = \case
-    CreateTargetTable tn -> getInputs tn
-    CreateTargetRecID rid -> getInputs rid
+    TargetTable tn -> getInputs tn
+    TargetRecID rid -> getInputs rid
 
 data CreateVal
   = CreateObject Object
@@ -604,21 +604,21 @@ instance HasInput CreateVal where
     where
       getTupleInputs (f,v) = getInputs f <> getInputs v
 
-data CreateReturn
-  = CRNone
-  | CRBefore
-  | CRAfter
-  | CRDiff
-  | CRProjections Selectors
+data ReturnType
+  = RTNone
+  | RTBefore
+  | RTAfter
+  | RTDiff
+  | RTProjections Selectors
   deriving (Eq, Generic, Read, Show)
 
-instance ToQL CreateReturn where
+instance ToQL ReturnType where
   toQL = \case
-    CRNone -> "RETURN NONE"
-    CRBefore -> "RETURN BEFORE"
-    CRAfter -> "RETURN AFTER"
-    CRDiff -> "RETURN DIFF"
-    CRProjections (Selectors ss) -> "RETURN " <> prepText (intersperse "," $ map toQL ss)
+    RTNone -> "RETURN NONE"
+    RTBefore -> "RETURN BEFORE"
+    RTAfter -> "RETURN AFTER"
+    RTDiff -> "RETURN DIFF"
+    RTProjections (Selectors ss) -> "RETURN " <> prepText (intersperse "," $ map toQL ss)
 
 data Exp
   = TypedE Exp TypeDef
@@ -632,7 +632,8 @@ data Exp
   | IfThenElseE Exp Exp Exp
   | SelectE (Maybe VALUE) Selectors (Maybe OMIT) FROM (Maybe WHERE) (Maybe SPLIT) (Maybe GROUP) (Maybe ORDER) (Maybe LIMIT) (Maybe START) (Maybe FETCH) (Maybe TIMEOUT) (Maybe PARALLEL) (Maybe EXPLAIN)
   | InsertE (Maybe IGNORE) TableName InsertVal
-  | CreateE (Maybe ONLY) CreateTarget CreateVal (Maybe CreateReturn) (Maybe TIMEOUT) (Maybe PARALLEL)
+  | CreateE (Maybe ONLY) Target CreateVal (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
+  | DeleteE (Maybe ONLY) Target (Maybe WHERE) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Exp where
@@ -684,6 +685,15 @@ instance ToQL Exp where
                , renderIfJust mTimeout
                , renderIfJust mParallel
                ]
+    DeleteE mOnly target mWhere mReturn mTimeout mParallel ->
+      prepText [ "DELETE"
+               , renderIfJust mOnly
+               , toQL target
+               , renderIfJust mWhere
+               , renderIfJust mReturn
+               , renderIfJust mTimeout
+               , renderIfJust mParallel
+               ]
 
 instance HasInput Exp where
   getInputs = \case
@@ -710,6 +720,8 @@ instance HasInput Exp where
       -> getInputs tableName <> getInputs insertVal
     CreateE _ target v _ _ _
       -> getInputs target <> getInputs v
+    DeleteE _ target mWhere _ _ _
+      -> getInputs target <> maybe [] getInputs mWhere
 
 data Statement
   = UseS USE

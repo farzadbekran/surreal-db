@@ -130,3 +130,29 @@ createTest3 = do
     print t
     runQuery () q
   print res
+
+deleteTest1 :: IO ()
+deleteTest1 = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q@(Query t _ _) =
+          [sql|
+              (DELETE test) :: ();
+              |]
+    print t
+    runQuery () q
+  print res
+
+deleteTest2 :: IO ()
+deleteTest2 = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let rid = RecordID (TableName "test") (TextID "018c4414-8cf3-7e36-a5c8-f341ac9749c2")
+    print rid
+    let q@(Query t _ _) =
+          [sql|
+              (DELETE test where id = %1 :: RecordID) :: ();
+              |]
+    print t
+    runQuery rid q
+  print res
