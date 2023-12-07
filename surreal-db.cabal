@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       Database.Surreal.AST
+      Database.Surreal.ASTJSON
       Database.Surreal.ManualTest
       Database.Surreal.Parser
       Database.Surreal.TH

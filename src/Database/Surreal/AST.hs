@@ -1,8 +1,8 @@
 {-# LANGUAGE DeriveGeneric   #-}
 {-# LANGUAGE LambdaCase      #-}
+{-# LANGUAGE RecordWildCards #-}
 
 {-# OPTIONS_GHC -Wno-deriving-defaults #-}
-{-# LANGUAGE RecordWildCards #-}
 
 module Database.Surreal.AST where
 

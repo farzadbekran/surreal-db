@@ -14,12 +14,16 @@ import           Data.Aeson
 import           Data.Aeson.KeyMap
 import           Data.Row
 import           Data.Row.Aeson                  ()
+import           Database.Surreal.AST            ( ID (TextID),
+                                                   RecordID (RecordID),
+                                                   TableName (TableName) )
+import           Database.Surreal.ASTJSON        ()
 import           Database.Surreal.TH
 import           Database.Surreal.WS.RPC.Surreal as RPC
 
 type TestRecType = Rec ("category" .== Text)
-type TestRecType2 = Rec ("id" .== Text .+ "cat" .== Vector TestRecType)
-type TestRecType3 = Rec ("id" .== Text .+ "name" .== Text .+ "fname" .== Maybe Text)
+type TestRecType2 = Rec ("id" .== RecordID .+ "cat" .== Vector TestRecType)
+type TestRecType3 = Rec ("id" .== RecordID .+ "name" .== Text .+ "fname" .== Maybe Text)
 
 test :: IO ()
 test = do
@@ -42,17 +46,16 @@ test2 :: IO ()
 test2 = do
   connState <- RPC.connect RPC.defaultConnectionInfo
   res <- RPC.runSurreal connState $ do
+    let rid = RecordID (TableName "artist") (TextID "00b2pg847d7b8r08t08t")
     let q@(Query t _ _) =
           [sql|
               (select *, ->create->product AS cat
-              from artist:00b2pg847d7b8r08t08t..
-              --where name = %1 :: Text && fname = %2 :: Int64
+              from artist where id = %1 :: RecordID
               limit 2
               fetch cat) :: (Vector TestRecType2);
-              --select 1 + 2 as ppp :: Int from artist limit 1;
               |]
     print t
-    runQuery () q
+    runQuery rid q
   print res
 
 insertTest :: IO ()
