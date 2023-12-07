@@ -428,12 +428,21 @@ instance HasInput RecordID where
   getInputs (RecordIDInput i) = [i]
   getInputs (RecordID t i)    = getInputs t <> getInputs i
 
+data RandFNName = RNUUID | RNRAND | RNULID
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL RandFNName where
+  toQL = \case
+    RNUUID -> "uuid()"
+    RNRAND -> "rand()"
+    RNULID -> "ulid()"
+
 data ID
   = TextID Text
   | NumID Int64
   | ObjID Object
   | TupID [Exp]
-  | RandomID FNName
+  | RandomID RandFNName
   | IDInput Input
   deriving (Eq, Generic, Read, Show)
 
@@ -443,7 +452,7 @@ instance ToQL ID where
     NumID i -> tshow i
     ObjID o -> toQL o
     TupID es -> prepText $ ["["] <> intersperse "," (map toQL es) <> ["]"]
-    RandomID (FNName fnName) -> fnName <> "()"
+    RandomID fn -> toQL fn
     IDInput i -> toQL i
 
 instance HasInput ID where

@@ -177,9 +177,9 @@ tupID = label "tupID" $ lexeme
 
 randomID :: Parser ID
 randomID = label "randomID" $ lexeme $ choice
-  [ caseInsensitiveSymbol "rand()" $> RandomID (FNName "rand")
-  , caseInsensitiveSymbol "ulid()" $> RandomID (FNName "ulid")
-  , caseInsensitiveSymbol "uuid()" $> RandomID (FNName "uuid")
+  [ caseInsensitiveSymbol "rand()" $> RandomID RNRAND
+  , caseInsensitiveSymbol "ulid()" $> RandomID RNULID
+  , caseInsensitiveSymbol "uuid()" $> RandomID RNUUID
   ]
 
 idInput :: Parser ID
