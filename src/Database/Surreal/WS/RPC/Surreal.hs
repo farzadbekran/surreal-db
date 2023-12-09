@@ -1,21 +1,21 @@
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE FlexibleContexts #-}
 
 module Database.Surreal.WS.RPC.Surreal where
 
 import           ClassyPrelude        hiding ( error, id )
-import           Control.Concurrent   ( ThreadId, forkIO, threadDelay, myThreadId )
+import           Control.Concurrent   ( ThreadId, forkIO, myThreadId,
+                                        threadDelay )
 import           Control.Exception    ( throw )
-import           Data.Aeson           ( FromJSON, ToJSON, Value, decode,
-                                        encode, (.=), object )
+import           Data.Aeson           ( FromJSON, ToJSON, Value, decode, encode,
+                                        object, (.=) )
 import qualified Data.ByteString.Lazy as BL
 import           Data.Map.Strict      as M
 import           Network.Socket       ( withSocketsDo )
 import qualified Network.WebSockets   as WS
-import Control.Monad.Except (MonadError)
 
 type Surreal a = ReaderT ConnectionState IO a
 
@@ -63,7 +63,7 @@ data Error
       { code    :: Int
       , message :: Text
       }
-  deriving (Eq, FromJSON, Generic, Read, Show, ToJSON, Exception)
+  deriving (Eq, Exception, FromJSON, Generic, Read, Show, ToJSON)
 
 data ConnectionInfo
   = ConnectionInfo

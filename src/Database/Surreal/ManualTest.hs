@@ -183,14 +183,14 @@ updateTest2 = do
     runQuery () q
   print res
 
--- selectTest1 :: IO ()
--- selectTest1 = do
---   connState <- RPC.connect RPC.defaultConnectionInfo
---   res <- RPC.runSurreal connState $ do
---     let q@(Query t _ _) =
---           [sql|
---               (SELECT * FROM person WHERE ->knows->person->(knows WHERE influencer = true) TIMEOUT 5s;) :: Value;
---               |]
---     print t
---     runQuery () q
---   print res
+selectTest1 :: IO ()
+selectTest1 = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q@(Query t _ _) =
+          [sql|
+              (SELECT * FROM person WHERE ->knows->person->(knows WHERE influencer = true) = 1 TIMEOUT 5s) :: Value;
+              |]
+    print t
+    runQuery () q
+  print res

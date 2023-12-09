@@ -11,29 +11,33 @@
 
 module Database.Surreal.TypeHandler where
 
-import           ClassyPrelude              as P hiding ( exp, lift )
+import           ClassyPrelude        as P hiding ( exp, lift )
 import           Control.Monad.Fail
-import           Data.Foldable              hiding ( elem, notElem )
+import           Data.Foldable        hiding ( elem, notElem )
 import           Data.Row
-import           Database.Surreal.AST       as AST
-import qualified Language.Haskell.TH        as TH
+import           Database.Surreal.AST as AST
+import qualified Language.Haskell.TH  as TH
 
-getFieldLabel :: Field -> Text
+getFieldLabel :: MonadFail m => Field -> m Text
 getFieldLabel = \case
-  SimpleField t -> t
+  SimpleField t -> return t
   IndexedField f _ -> getFieldLabel f
   FilteredField f _ -> getFieldLabel f
-  CompositeField f1 f2 -> getFieldLabel f1 <> getFieldLabel f2
+  CompositeField f1 f2 -> do
+    l1 <- getFieldLabel f1
+    l2 <- getFieldLabel f2
+    return $ l1 <> l2
+  FieldInput _ -> fail "Can't determine field label for FieldInput!"
 
-getEdgeLabel :: Edge -> Text
+getEdgeLabel :: MonadFail m => Edge -> m Text
 getEdgeLabel = \case
-  OutEdge f -> "->" <> getFieldLabel f
-  InEdge f -> "<-" <> getFieldLabel f
+  OutEdge f -> ("->" <>) <$> getFieldLabel f
+  InEdge f -> ("<-" <>) <$>  getFieldLabel f
 
 extractSelectorTypes :: MonadFail m => Selectors -> m [(Maybe Text, TypeDef)]
 extractSelectorTypes (Selectors ss) = mapM (\s -> do
                                                t <- getSelectorType s
-                                               let l = getSelectorLabel s
+                                               l <- getSelectorLabel s
                                                return (Just l, t))
                                       ss
   where
@@ -41,13 +45,14 @@ extractSelectorTypes (Selectors ss) = mapM (\s -> do
     getSelectorType = \case
       TypedSelector _ t -> return t
       a -> fail $ "No type definition given for: " <> show a
-    getSelectorLabel :: Selector -> Text
+    getSelectorLabel :: MonadFail m => Selector -> m Text
     getSelectorLabel = \case
       FieldSelector f -> getFieldLabel f
       ExpSelector _ f -> getFieldLabel f
       SelectorAs _ f -> getFieldLabel f
       EdgeSelector _ _ f -> getFieldLabel f
       TypedSelector s _ -> getSelectorLabel s
+      WildCardSelector -> fail "Can't determine selector type for WildCardSelector '*'"
 
 -- | Gives the base type for the select expression, after applying the clauses that
 -- modiify the return type like omit, value, split, etc
@@ -67,7 +72,7 @@ getSelectBaseType = \case
       applyOmit :: MonadFail m => [(Maybe Text, TypeDef)] -> m [(Maybe Text, TypeDef)]
       applyOmit ts = case mOmit of
         Just (OMIT fs) -> do
-          let fieldLabels = map (Just . getFieldLabel) fs
+          fieldLabels <- mapM (fmap Just . getFieldLabel) fs
           return $ filter (\(ls, _) -> do
                               ls `notElem` fieldLabels)
                             ts
@@ -77,7 +82,7 @@ getSelectBaseType = \case
       applySplit :: MonadFail m => [(Maybe Text, TypeDef)] -> m [(Maybe Text, TypeDef)]
       applySplit ts = case mSplit of
         Just (SPLIT fs) -> do
-          let fieldLabels = map (Just . getFieldLabel) fs
+          fieldLabels <- mapM (fmap Just . getFieldLabel) fs
           return $ foldl (\r initialT@(ls, t) ->
                             if ls `elem` fieldLabels
                             then case t of
@@ -131,6 +136,6 @@ getExpressionType :: MonadFail m => Exp -> m TH.Type
 getExpressionType e = do
   t <- getBaseType e
   case t of
-    [] -> return $ TH.TupleT 0
+    []              -> return $ TH.TupleT 0
     [(Nothing, t')] -> return $ mkType t'
-    ts -> mkRecType ts
+    ts              -> mkRecType ts

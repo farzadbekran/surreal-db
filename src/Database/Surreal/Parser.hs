@@ -113,8 +113,8 @@ dateTimeL = label "UTCTime" $ lexeme $ do
     Just utc -> return $ DateTimeL utc
     _        -> fail "Invalid ISO8601 DateTime"
 
-durationL :: Parser Literal
-durationL = label "Duration" $ lexeme $ do
+durationParser :: Parser Duration
+durationParser = label "Duration" $ lexeme $ do
   let
     tags = ["y", "w", "d", "h", "m", "s", "ms", "us", "ns"]
     partParser = do
@@ -135,7 +135,10 @@ durationL = label "Duration" $ lexeme $ do
                            _    -> dur
                        )
                  defaultDuration parts
-  return $ DurationL duration
+  return duration
+
+durationL :: Parser Literal
+durationL = label "DurationL" $ lexeme $ DurationL <$> durationParser
 
 literalInput :: Parser Literal
 literalInput = label "LiteralInput" $ lexeme $ LiteralInput <$> input
@@ -530,7 +533,10 @@ fetch = label "FETCH" $ lexeme $ do
 timeout :: Parser TIMEOUT
 timeout = label "TIMEOUT" $ lexeme $ do
   _ <- caseInsensitiveSymbol "TIMEOUT"
-  read <$> some numberChar <&> TIMEOUT
+  choice
+    [ TIMEOUT <$> durationParser
+    , TIMEOUTInput <$> input
+    ]
 
 parallel :: Parser PARALLEL
 parallel = label "PARALLEL" $ lexeme $ caseInsensitiveSymbol "PARALLEL" $> PARALLEL
@@ -725,6 +731,14 @@ typedExp = do
   t <- parseType
   return (`TypedE` t)
 
+edgeSelectorE :: Parser Exp
+edgeSelectorE = label "selectorE" $ lexeme $ do
+  mInitialField <- optional field
+  edges <- some edge
+  if null edges
+    then fail "Invalid Edge!"
+    else return $ EdgeSelectorE mInitialField edges
+
 -- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
 operatorTable = [ [ E.Postfix typedExp
@@ -788,6 +802,7 @@ term = sc
               , appE
               , litE
               , constE
+              , edgeSelectorE
               , betweenParens exp
               ])
 

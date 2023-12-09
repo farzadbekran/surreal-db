@@ -3,6 +3,7 @@
 {-# LANGUAGE RecordWildCards #-}
 
 {-# OPTIONS_GHC -Wno-deriving-defaults #-}
+{-# LANGUAGE NamedFieldPuns  #-}
 
 module Database.Surreal.AST where
 
@@ -348,12 +349,12 @@ instance HasInput FETCH where
   getInputs (FETCH fs) = concatMap getInputs fs
 
 data TIMEOUT
-  = TIMEOUT Int64
+  = TIMEOUT Duration
   | TIMEOUTInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL TIMEOUT where
-  toQL (TIMEOUT i)      = "TIMEOUT " <> tshow i
+  toQL (TIMEOUT d)      = "TIMEOUT " <> toQL d
   toQL (TIMEOUTInput i) = "TIMEOUT " <> toQL i
 
 data PARALLEL = PARALLEL
@@ -383,6 +384,29 @@ data Duration
       , _ns :: Int64
       }
   deriving (Eq, Generic, Read, Show)
+
+instance ToQL Duration where
+  toQL Duration { _y
+                , _w
+                , _d
+                , _h
+                , _m
+                , _s
+                , _ms
+                , _us
+                , _ns
+                }
+    = renderIfNonZero _y "y"
+    <> renderIfNonZero _w "w"
+    <> renderIfNonZero _d "d"
+    <> renderIfNonZero _h "h"
+    <> renderIfNonZero _m "m"
+    <> renderIfNonZero _s "s"
+    <> renderIfNonZero _ms "ms"
+    <> renderIfNonZero _us "us"
+    <> renderIfNonZero _ns "ns"
+    where
+      renderIfNonZero i unit = if i /= 0 then tshow i <> unit else ""
 
 defaultDuration :: Duration
 defaultDuration = Duration 0 0 0 0 0 0 0 0 0
@@ -667,7 +691,7 @@ data Exp
   | InputE Input
   | IfThenE Exp Exp
   | IfThenElseE Exp Exp Exp
-  -- | SelectorE -- TODO: Finish this!!
+  | EdgeSelectorE (Maybe Field) [Edge]
   | SelectE (Maybe VALUE) Selectors (Maybe OMIT) FROM (Maybe WHERE) (Maybe SPLIT) (Maybe GROUP) (Maybe ORDER) (Maybe LIMIT) (Maybe START) (Maybe FETCH) (Maybe TIMEOUT) (Maybe PARALLEL) (Maybe EXPLAIN)
   | InsertE (Maybe IGNORE) TableName InsertVal
   | CreateE (Maybe ONLY) Target CreateVal (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
@@ -691,6 +715,7 @@ instance ToQL Exp where
                                     , "THEN", toQL te
                                     , "ELSE", toQL fe
                                     , "END"]
+    EdgeSelectorE mf es -> foldl1 (<>) $ maybe "" toQL mf : map toQL es
     SelectE mValue selectors mOmit from mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain ->
       prepText [ "SELECT"
                , renderIfJust mValue
@@ -755,6 +780,7 @@ instance HasInput Exp where
     ConstE _ -> []
     IfThenE e te -> getInputs e <> getInputs te
     IfThenElseE e te fe -> getInputs e <> getInputs te <> getInputs fe
+    EdgeSelectorE mf es -> maybe [] getInputs mf <> concatMap getInputs es
     SelectE _ selectors _ from mWhere mSplit mGroup mOrder mLimit mStart mFetch _ _ _
       -> getInputs selectors
       <> getInputs from
