@@ -681,6 +681,17 @@ instance ToQL ReturnType where
     RTDiff -> "RETURN DIFF"
     RTProjections (Selectors ss) -> "RETURN " <> prepText (intersperse "," $ map toQL ss)
 
+data RelateTarget
+  = RelateTarget RecordID TableName RecordID
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL RelateTarget where
+  toQL (RelateTarget rid1 tn rid2)
+    = toQL rid1 <> "->" <> toQL tn <> "->" <> toQL rid2
+
+instance HasInput RelateTarget where
+  getInputs (RelateTarget rid1 tn rid2) = getInputs rid1 <> getInputs tn <> getInputs rid2
+
 data Exp
   = TypedE Exp TypeDef
   | OPE Operator Exp Exp
@@ -697,6 +708,7 @@ data Exp
   | CreateE (Maybe ONLY) Target CreateVal (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
   | DeleteE (Maybe ONLY) Target (Maybe WHERE) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
   | UpdateE (Maybe ONLY) Target UpdateVal (Maybe WHERE) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
+  | RelateE (Maybe ONLY) RelateTarget (Maybe UpdateVal) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Exp where
@@ -759,6 +771,15 @@ instance ToQL Exp where
                , renderIfJust mTimeout
                , renderIfJust mParallel
                ]
+    RelateE mOnly target v mReturn mTimeout mParallel ->
+      prepText [ "RELATE"
+               , renderIfJust mOnly
+               , toQL target
+               , renderIfJust v
+               , renderIfJust mReturn
+               , renderIfJust mTimeout
+               , renderIfJust mParallel
+               ]
     DeleteE mOnly target mWhere mReturn mTimeout mParallel ->
       prepText [ "DELETE"
                , renderIfJust mOnly
@@ -797,6 +818,8 @@ instance HasInput Exp where
       -> getInputs target <> getInputs v
     UpdateE _ target v mWhere _ _ _
       -> getInputs target <> maybe [] getInputs mWhere <> getInputs v
+    RelateE _ target v _ _ _
+      -> getInputs target <> maybe [] getInputs v
     DeleteE _ target mWhere _ _ _
       -> getInputs target <> maybe [] getInputs mWhere
 

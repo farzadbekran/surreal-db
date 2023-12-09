@@ -189,7 +189,19 @@ selectTest1 = do
   res <- RPC.runSurreal connState $ do
     let q@(Query t _ _) =
           [sql|
-              (SELECT * FROM person WHERE ->knows->person->(knows WHERE influencer = true) = 1 TIMEOUT 5s) :: Value;
+              (SELECT * FROM person WHERE ->knows->person->(knows WHERE influencer = true) TIMEOUT 5s) :: Value;
+              |]
+    print t
+    runQuery () q
+  print res
+
+relateTest1 :: IO ()
+relateTest1 = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q@(Query t _ _) =
+          [sql|
+              (RELATE person:l19zjikkw1p1h9o6ixrg->wrote->article:8nkk6uj4yprt49z7y3zm SET time.written = "just now!") :: Value;
               |]
     print t
     runQuery () q

@@ -714,6 +714,25 @@ updateE = label "updateE" $ lexeme $ do
   mParallel <- optional parallel
   return $ UpdateE mOnly tar val mWhere mReturn mTimeout mParallel
 
+relateTarget :: Parser RelateTarget
+relateTarget = label "RelateTarget" $ lexeme $ do
+  rid1 <- recordID
+  _ <- symbol "->"
+  tn <- tableName
+  _ <- symbol "->"
+  RelateTarget rid1 tn <$> recordID
+
+relateE :: Parser Exp
+relateE = label "relateE" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "RELATE"
+  mOnly <- optional $ caseInsensitiveSymbol "ONLY" $> ONLY
+  tar <- relateTarget
+  val <- optional updateVal
+  mReturn <- optional returnType
+  mTimeout <- optional timeout
+  mParallel <- optional parallel
+  return $ RelateE mOnly tar val mReturn mTimeout mParallel
+
 deleteE :: Parser Exp
 deleteE = label "deleteE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DELETE"
@@ -798,6 +817,7 @@ term = sc
               , insertE
               , createE
               , updateE
+              , relateE
               , deleteE
               , appE
               , litE
