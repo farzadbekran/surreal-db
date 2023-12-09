@@ -75,6 +75,10 @@ instance ToQL Operator where
 
 type Namespace = Text
 type Database = Text
+type UserName = Text
+type ScopeName = Text
+type TokenName = Text
+type TokenValue = Text
 
 data TypeDef
   = T String [TypeDef]
@@ -823,6 +827,175 @@ instance HasInput Exp where
     DeleteE _ target mWhere _ _ _
       -> getInputs target <> maybe [] getInputs mWhere
 
+data UserScope
+  = USROOT
+  | USNS
+  | USDB
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL UserScope where
+  toQL = \case
+    USROOT -> "ON ROOT"
+    USNS -> "ON NAMESPACE"
+    USDB -> "ON DATABASE"
+
+data UserPassword
+  = PASSWORD Text
+  | PASSHASH Text
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL UserPassword where
+  toQL = \case
+    PASSWORD t -> "PASSWORD '" <> t <> "'"
+    PASSHASH t -> "PASSHASH '" <> t <> "'"
+
+data UserRole
+  = UROWNER
+  | UREDITOR
+  | URVIEWER
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL UserRole where
+  toQL = \case
+    UROWNER -> "ROLES OWNER"
+    UREDITOR -> "ROLES EDITOR"
+    URVIEWER -> "ROLES VIEWER"
+
+data TokenScope
+  = TSNS
+  | TSDB
+  | TSScope ScopeName
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL TokenScope where
+  toQL = \case
+    TSNS -> "ON NAMESPACE"
+    TSDB -> "ON DATABASE"
+    TSScope t -> "ON " <> t
+
+data TokenType
+  = EDDSA
+  | ES256
+  | ES384
+  | ES512
+  | PS256
+  | PS384
+  | PS512
+  | RS256
+  | RS384
+  | RS512
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL TokenType where
+  toQL = \case
+    EDDSA -> "TYPE EDDSA"
+    ES256 -> "TYPE ES256"
+    ES384 -> "TYPE ES384"
+    ES512 -> "TYPE ES512"
+    PS256 -> "TYPE PS256"
+    PS384 -> "TYPE PS384"
+    PS512 -> "TYPE PS512"
+    RS256 -> "TYPE RS256"
+    RS384 -> "TYPE RS384"
+    RS512 -> "TYPE RS512"
+
+data Drop = Drop
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL Drop where
+  toQL _ = "DROP"
+
+data OperationType
+  = OTSelect
+  | OTCreate
+  | OTUpdate
+  | OTDelete
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL OperationType where
+  toQL = \case
+    OTSelect -> "select"
+    OTCreate -> "create"
+    OTUpdate -> "update"
+    OTDelete -> "delete"
+
+data SchemaType
+  = SCHEMAFULL
+  | SCHEMALESS
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL SchemaType where
+  toQL = \case
+    SCHEMAFULL -> "SCHEMAFULL"
+    SCHEMALESS -> "SCHEMALESS"
+
+data TablePermissions
+  = TPNONE
+  | TPFULL
+  | TablePermissions [([OperationType], Exp)]
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL TablePermissions where
+  toQL = \case
+    TPNONE -> "PERMISSIONS NONE"
+    TPFULL -> "PERMISSIONS FULL"
+    TablePermissions perms -> prepText $
+      "PERMISSIONS" : map renderPermission perms
+      where
+        renderPermission (ots, e) = intercalate "," (map toQL ots) <> toQL e
+
+data Define
+  = DefNamespace Namespace
+  | DefDatabase Database
+  | DefUser UserName (Maybe UserScope) (Maybe UserPassword) (Maybe UserRole)
+  | DefToken TokenName (Maybe TokenScope) TokenType TokenValue
+  | DefScope ScopeName Duration Exp Exp
+  | DefTable TableName (Maybe Drop) (Maybe SchemaType) (Maybe Exp) (Maybe Duration) (Maybe TablePermissions)
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL Define where
+  toQL = \case
+    DefNamespace ns -> "DEFINE NAMESPACE " <> toQL ns
+    DefDatabase db -> "DEFINE DATABASE " <> toQL db
+    DefUser un mLevel mPass mRole
+      -> prepText
+         [ "DEFINE USER"
+         , toQL un
+         , renderIfJust mLevel
+         , renderIfJust mPass
+         , renderIfJust mRole
+         ]
+    DefToken tn mTs tt tv
+      -> prepText
+         [ "DEFINE TOKEN"
+         , toQL tn
+         , renderIfJust mTs
+         , toQL tt
+         , toQL tv
+         ]
+    DefScope sn dur signUp signIn
+      -> prepText
+         [ "DEFINE SCOPE"
+         , toQL sn
+         , "SESSION " <> toQL dur
+         , "SIGNUP " <> toQL signUp
+         , "SIGNIN " <> toQL signIn
+         ]
+    DefTable tn mDrop mSchema mExp mDur mPerms
+      -> prepText
+         [ "DEFINE TABLE"
+         , toQL tn
+         , renderIfJust mDrop
+         , renderIfJust mSchema
+         , case mExp of
+             Just e -> "AS " <> toQL e
+             Nothing -> ""
+         , case mDur of
+             Just dur -> "CHANGEFEED " <> toQL dur
+             Nothing -> ""
+         , renderIfJust mPerms
+         ]
+
 data Statement
   = UseS USE
   | LetS Param Exp
@@ -832,14 +1005,15 @@ data Statement
   | BreakS
   | ContinueS
   | ForS Param Exp Block
+  | DefineS Define
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Statement where
   toQL = \case
     UseS u -> case u of
-      USE ns db -> "USE " <> ns <> " " <> db
-      USE_NS ns -> "USE " <> ns
-      USE_DB db -> "USE " <> db
+      USE ns db -> "USE NS" <> ns <> " DB" <> db
+      USE_NS ns -> "USE NS" <> ns
+      USE_DB db -> "USE DB" <> db
     LetS p e -> "LET " <> toQL p <> " = " <> toQL e
     BeginS -> "BEGIN"
     CancelS -> "CANCEL"
@@ -847,6 +1021,7 @@ instance ToQL Statement where
     BreakS -> "BREAK"
     ContinueS -> "CONTINUE"
     ForS p e b -> "FOR " <> toQL p <> " IN " <> toQL e <> " {" <> toQL b <> "}"
+    DefineS d -> toQL d
 
 instance HasInput Statement where
   getInputs = \case
