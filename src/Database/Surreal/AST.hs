@@ -1021,7 +1021,7 @@ instance ToQL SearchAnalyzer where
 data Define
   = DefNamespace Namespace
   | DefDatabase Database
-  | DefUser UserName (Maybe UserScope) (Maybe UserPassword) (Maybe UserRole)
+  | DefUser UserName UserScope (Maybe UserPassword) (Maybe UserRole)
   | DefToken TokenName (Maybe TokenScope) TokenType TokenValue
   | DefScope ScopeName Duration SignUpExp SignInExp
   | DefTable TableName (Maybe Drop) (Maybe SchemaType) (Maybe AsTableViewExp) (Maybe Duration) (Maybe TablePermissions)
@@ -1035,11 +1035,11 @@ instance ToQL Define where
   toQL = \case
     DefNamespace ns -> "DEFINE NAMESPACE " <> toQL ns
     DefDatabase db -> "DEFINE DATABASE " <> toQL db
-    DefUser un mLevel mPass mRole
+    DefUser un level mPass mRole
       -> prepText
          [ "DEFINE USER"
          , toQL un
-         , renderIfJust mLevel
+         , toQL level
          , renderIfJust mPass
          , renderIfJust mRole
          ]

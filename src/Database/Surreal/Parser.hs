@@ -19,7 +19,6 @@ import           Database.Surreal.AST
 import           Text.Megaparsec
 import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer     as L
-import           Text.Read                      ( read )
 
 type Parser = Parsec Void String
 
@@ -78,8 +77,13 @@ nullL = label "NULL" $ lexeme $ symbol "NULL" $> NoneL
 boolL :: Parser Literal
 boolL = label "Bool" $ lexeme $ BoolL False <$ symbol "False" <|> BoolL False <$ symbol "True"
 
+quotedText :: Parser Text
+quotedText = label "quotedText" $ lexeme $ pack <$>
+  (between (char '"') (char '"') (takeWhileP Nothing (/= '"'))
+    <|> between (char '\'') (char '\'') (takeWhileP Nothing (/= '\'')))
+
 textL :: Parser Literal
-textL = label "Text" $ lexeme $ TextL . pack <$> between (char '"') (char '"') (takeWhileP Nothing (/= '"'))
+textL = label "TextL" $ lexeme $ TextL <$> quotedText
 
 intParser :: Parser Int64
 intParser = label "Int64" $ do
@@ -345,11 +349,14 @@ litE = label "LitE" $ lexeme $ LitE <$> literal
 constE :: Parser Exp
 constE = label "ConstE" $ lexeme $ ConstE . pack <$> some alphaNumChar
 
-paramE :: Parser Exp
-paramE = label "ParamE" $ lexeme $ do
+param :: Parser Param
+param = label "Param" $ lexeme $ do
   _ <- char '$'
   p <- pack <$> some alphaNumChar
-  return $ ParamE (Param p)
+  return $ Param p
+
+paramE :: Parser Exp
+paramE = label "ParamE" $ lexeme $ ParamE <$> param
 
 inputE :: Parser Exp
 inputE = label "InputE" $ lexeme $ do
@@ -826,10 +833,113 @@ term = sc
               , betweenParens exp
               ])
 
--- TODO: finish this
+useNSDB :: Parser Statement
+useNSDB = label "useNSDB" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "USE"
+  _ <- caseInsensitiveSymbol "NS"
+  ns <- pack <$> some alphaNumChar
+  _ <- caseInsensitiveSymbol "DB"
+  db <- pack <$> some alphaNumChar
+  return $ UseS $ USE ns db
+
+useNS :: Parser Statement
+useNS = label "useNSDB" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "USE"
+  _ <- caseInsensitiveSymbol "NS"
+  ns <- pack <$> some alphaNumChar
+  return $ UseS $ USE_NS ns
+
+useDB :: Parser Statement
+useDB = label "useNSDB" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "USE"
+  _ <- caseInsensitiveSymbol "DB"
+  db <- pack <$> some alphaNumChar
+  return $ UseS $ USE_DB db
+
+useS :: Parser Statement
+useS = label "useS" $ lexeme $ choice $ map try
+  [ useNSDB
+  , useNS
+  , useDB
+  ]
+
+letS :: Parser Statement
+letS = label "letS" $ lexeme $ do
+  p <- param
+  LetS p <$> exp
+
+forS :: Parser Statement
+forS = label "forS" $ lexeme $ do
+  _ <-  caseInsensitiveSymbol "FOR"
+  p <- param
+  _ <- caseInsensitiveSymbol "IN"
+  e <- exp
+  ForS p e <$> block
+
+defNamespace :: Parser Define
+defNamespace = label "defNamespace" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFINE"
+  _ <- caseInsensitiveSymbol "NAMESPACE"
+  DefNamespace <$> (pack <$> some alphaNumChar)
+
+defDatabase :: Parser Define
+defDatabase = label "defDatabase" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFINE"
+  _ <- caseInsensitiveSymbol "DATABASE"
+  DefDatabase <$> (pack <$> some alphaNumChar)
+
+userScope :: Parser UserScope
+userScope = label "userScope" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "ON"
+  choice [ caseInsensitiveSymbol "OWNER" $> USROOT
+         , caseInsensitiveSymbol "NAMESPACE" $> USNS
+         , caseInsensitiveSymbol "DATABASE" $> USDB
+         ]
+
+userPass :: Parser UserPassword
+userPass = label "userPass" $ lexeme $ do
+  choice [ caseInsensitiveSymbol "PASSWORD" >> quotedText <&> PASSWORD
+         , caseInsensitiveSymbol "PASSHASH" >> quotedText <&> PASSHASH
+         ]
+
+userRole :: Parser UserRole
+userRole = label "userRole" $ lexeme $ do
+  choice [ caseInsensitiveSymbol "OWNER" $> UROWNER
+         , caseInsensitiveSymbol "EDITOR" $> UREDITOR
+         , caseInsensitiveSymbol "VIEWER" $> URVIEWER
+         ]
+
+defUser :: Parser Define
+defUser = label "defUser" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFINE"
+  _ <- caseInsensitiveSymbol "USER"
+  un <- pack <$> some alphaNumChar
+  scope <- userScope
+  pass <- optional userPass
+  role <- optional userRole
+  return $ DefUser un scope pass role
+
+defineS :: Parser Statement
+defineS = label "defineS" $ lexeme $
+  DefineS <$> choice
+  (map try
+    [ defNamespace
+    , defDatabase
+    , defUser
+    ])
+
 statement :: Parser Statement
 statement = lexeme $ choice $ map try
-  []
+  [ useS
+  , letS
+  , caseInsensitiveSymbol "BEGIN" $> BeginS
+  , caseInsensitiveSymbol "CANCEL" $> CancelS
+  , caseInsensitiveSymbol "COMMIT" $> CommitS
+  , caseInsensitiveSymbol "BREAK" $> BreakS
+  , caseInsensitiveSymbol "CONTINUNE" $> ContinueS
+  , forS
+  , defineS
+  ]
 
 expLine :: Parser SurQLLine
 expLine = lexeme $ do
