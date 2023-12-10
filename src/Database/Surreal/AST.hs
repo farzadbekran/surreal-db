@@ -79,6 +79,30 @@ type UserName = Text
 type ScopeName = Text
 type TokenName = Text
 type TokenValue = Text
+type EventName = Text
+type FieldName = Text
+type TypeName = Text
+type AnalyzerName = Text
+type LanguageName = Text
+type IndexName = Text
+
+type Min = Int64
+type Max = Int64
+
+type K1 = Float
+type B = Float
+
+type Flexible = Bool
+type Optional = Bool
+
+type DefaultExp = Exp
+type ValueExp = Exp
+type AssertExp = Exp
+type SignUpExp = Exp
+type SignInExp = Exp
+type AsTableViewExp = Exp
+type WhenExp = Exp
+type ThenExp = Exp
 
 data TypeDef
   = T String [TypeDef]
@@ -98,7 +122,7 @@ instance ToQL Param where
   toQL (Param t) = "$" <> t
 
 data Field
-  = SimpleField Text -- ^ name
+  = SimpleField FieldName -- ^ name
   | IndexedField Field [Literal] -- ^ address[0]
   | FilteredField Field WHERE -- ^ (address WHERE city = "New York")
   | CompositeField Field Field -- ^ address.city
@@ -193,8 +217,6 @@ data ONLY = ONLY
 
 instance ToQL ONLY where
   toQL ONLY = "ONLY"
-
-type IndexName = Text -- do we need to improve this?
 
 instance ToQL Text where
   toQL = id
@@ -827,10 +849,7 @@ instance HasInput Exp where
     DeleteE _ target mWhere _ _ _
       -> getInputs target <> maybe [] getInputs mWhere
 
-data UserScope
-  = USROOT
-  | USNS
-  | USDB
+data UserScope = USROOT | USNS | USDB
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL UserScope where
@@ -849,10 +868,7 @@ instance ToQL UserPassword where
     PASSWORD t -> "PASSWORD '" <> t <> "'"
     PASSHASH t -> "PASSHASH '" <> t <> "'"
 
-data UserRole
-  = UROWNER
-  | UREDITOR
-  | URVIEWER
+data UserRole = UROWNER | UREDITOR | URVIEWER
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL UserRole where
@@ -873,17 +889,7 @@ instance ToQL TokenScope where
     TSDB -> "ON DATABASE"
     TSScope t -> "ON " <> t
 
-data TokenType
-  = EDDSA
-  | ES256
-  | ES384
-  | ES512
-  | PS256
-  | PS384
-  | PS512
-  | RS256
-  | RS384
-  | RS512
+data TokenType = EDDSA | ES256 | ES384 | ES512 | PS256 | PS384 | PS512 | RS256 | RS384 | RS512
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL TokenType where
@@ -905,11 +911,7 @@ data Drop = Drop
 instance ToQL Drop where
   toQL _ = "DROP"
 
-data OperationType
-  = OTSelect
-  | OTCreate
-  | OTUpdate
-  | OTDelete
+data OperationType = OTSelect | OTCreate | OTUpdate | OTDelete
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL OperationType where
@@ -919,9 +921,7 @@ instance ToQL OperationType where
     OTUpdate -> "update"
     OTDelete -> "delete"
 
-data SchemaType
-  = SCHEMAFULL
-  | SCHEMALESS
+data SchemaType = SCHEMAFULL | SCHEMALESS
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL SchemaType where
@@ -944,13 +944,91 @@ instance ToQL TablePermissions where
       where
         renderPermission (ots, e) = intercalate "," (map toQL ots) <> toQL e
 
+data FieldType
+  = FieldType Flexible Optional TypeName
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL FieldType where
+  toQL (FieldType flex optn tn)
+    = if flex then "FLEXIBLE TYPE " else "TYPE "
+    <> if optn then "option<" <> toQL tn <> ">" else toQL tn
+
+data Tokenizer
+  = BLANK
+  | CAMEL
+  | CLASS
+  | PUNCT
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL Tokenizer where
+  toQL = \case
+    BLANK -> "blank"
+    CAMEL -> "camel"
+    CLASS -> "class"
+    PUNCT -> "punct"
+
+data Filter
+  = ASCII
+  | Lowercase
+  | Uppercase
+  | Edgengram Min Max
+  | Snowball LanguageName
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL Filter where
+  toQL = \case
+    ASCII -> "ascii"
+    Lowercase -> "lowercase"
+    Uppercase -> "uppercase"
+    Edgengram mn mx -> "edgengram(" <> tshow mn <> ", " <> tshow mx <> ")"
+    Snowball ln -> "snowball(" <> toQL ln <> ")"
+
+data UNIQUE = UNIQUE
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL UNIQUE where
+  toQL _ = "UNIQUE"
+
+data HIGHLIGHTS = HIGHLIGHTS
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL HIGHLIGHTS where
+  toQL _ = "HIGHLIGHTS"
+
+newtype BM25 = BM25 (Maybe (K1, B))
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL BM25 where
+  toQL (BM25 mParams) = prepText
+    [ "BM25"
+    , case mParams of
+        Just (k1, b) -> "(" <> tshow k1 <> ", " <> tshow b <> ")"
+        Nothing -> ""
+    ]
+
+data SearchAnalyzer = SearchAnalyzer AnalyzerName (Maybe BM25) (Maybe HIGHLIGHTS)
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL SearchAnalyzer where
+  toQL (SearchAnalyzer an mBM25 mHighlights)
+    = prepText
+      [ "SEARCH ANALYZER"
+      , toQL an
+      , renderIfJust mBM25
+      , renderIfJust mHighlights
+      ]
+
 data Define
   = DefNamespace Namespace
   | DefDatabase Database
   | DefUser UserName (Maybe UserScope) (Maybe UserPassword) (Maybe UserRole)
   | DefToken TokenName (Maybe TokenScope) TokenType TokenValue
-  | DefScope ScopeName Duration Exp Exp
-  | DefTable TableName (Maybe Drop) (Maybe SchemaType) (Maybe Exp) (Maybe Duration) (Maybe TablePermissions)
+  | DefScope ScopeName Duration SignUpExp SignInExp
+  | DefTable TableName (Maybe Drop) (Maybe SchemaType) (Maybe AsTableViewExp) (Maybe Duration) (Maybe TablePermissions)
+  | DefEvent EventName TableName (Maybe WhenExp) ThenExp
+  | DefField Field TableName (Maybe FieldType) (Maybe DefaultExp) (Maybe ValueExp) (Maybe AssertExp) (Maybe TablePermissions)
+  | DefAnalyzer AnalyzerName (Maybe [Tokenizer]) (Maybe [Filter])
+  | DefIndex IndexName TableName [Field] (Maybe (Either UNIQUE SearchAnalyzer))
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Define where
@@ -988,12 +1066,66 @@ instance ToQL Define where
          , renderIfJust mDrop
          , renderIfJust mSchema
          , case mExp of
-             Just e -> "AS " <> toQL e
+             Just e  -> "AS " <> toQL e
              Nothing -> ""
          , case mDur of
              Just dur -> "CHANGEFEED " <> toQL dur
-             Nothing -> ""
+             Nothing  -> ""
          , renderIfJust mPerms
+         ]
+    DefEvent en tn mWhen thenE
+      -> prepText
+         [ "DEFINE EVENT"
+         , toQL en
+         , "ON TABLE"
+         , toQL tn
+         , case mWhen of
+             Just e  -> "WHEN " <> toQL e
+             Nothing -> ""
+         , "THEN"
+         , toQL thenE
+         ]
+    DefField f tn mFieldType mDefExp mValExp mAssertExp mPermissions
+      -> prepText
+         [ "DEFINE FIELD"
+         , toQL f
+         , "ON TABLE"
+         , toQL tn
+         , renderIfJust mFieldType
+         , case mDefExp of
+             Just e  -> "DEFAULT " <> toQL e
+             Nothing -> ""
+         , case mValExp of
+             Just e  -> "VALUE " <> toQL e
+             Nothing -> ""
+         , case mAssertExp of
+             Just e  -> "ASSERT " <> toQL e
+             Nothing -> ""
+         , renderIfJust mPermissions
+         ]
+    DefAnalyzer an mTokenizers mFilters
+      -> prepText
+         [ "DEFINE ANALYZER"
+         , toQL an
+         , case mTokenizers of
+             Just ts -> "TOKENIZERS " <> intercalate "," (map toQL ts)
+             Nothing -> ""
+         , case mFilters of
+             Just fs -> "FILTERS " <> intercalate "," (map toQL fs)
+             Nothing -> ""
+         ]
+    DefIndex indxN tn fields meUSA
+      -> prepText
+         [ "DEFINE INDEX"
+         , toQL indxN
+         , "ON TABLE"
+         , toQL tn
+         , "FIELDS"
+         , intercalate "," $ map toQL fields
+         , case meUSA of
+             Just (Right sa) -> toQL sa
+             Just (Left u) -> toQL u
+             Nothing -> ""
          ]
 
 data Statement
