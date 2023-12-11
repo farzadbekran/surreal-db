@@ -92,9 +92,6 @@ type Max = Int64
 type K1 = Float
 type B = Float
 
-type Flexible = Bool
-type Optional = Bool
-
 type DefaultExp = Exp
 type ValueExp = Exp
 type AssertExp = Exp
@@ -849,7 +846,7 @@ instance HasInput Exp where
     DeleteE _ target mWhere _ _ _
       -> getInputs target <> maybe [] getInputs mWhere
 
-data UserScope = USROOT | USNS | USDB
+data UserScope = USROOT | USNS | USDB | USScope ScopeName
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL UserScope where
@@ -857,6 +854,7 @@ instance ToQL UserScope where
     USROOT -> "ON ROOT"
     USNS -> "ON NAMESPACE"
     USDB -> "ON DATABASE"
+    USScope sn -> "ON SCOPE " <> toQL sn
 
 data UserPassword
   = PASSWORD Text
@@ -905,10 +903,10 @@ instance ToQL TokenType where
     RS384 -> "TYPE RS384"
     RS512 -> "TYPE RS512"
 
-data Drop = Drop
+data DROP = DROP
   deriving (Eq, Generic, Read, Show)
 
-instance ToQL Drop where
+instance ToQL DROP where
   toQL _ = "DROP"
 
 data OperationType = OTSelect | OTCreate | OTUpdate | OTDelete
@@ -944,14 +942,21 @@ instance ToQL TablePermissions where
       where
         renderPermission (ots, e) = intercalate "," (map toQL ots) <> toQL e
 
+data Flexible = Flexible
+  deriving (Eq, Generic, Read, Show)
+
+data Optional = Optional
+  deriving (Eq, Generic, Read, Show)
+
 data FieldType
-  = FieldType Flexible Optional TypeName
+  = FieldType (Maybe Flexible) (Maybe Optional) TypeName
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL FieldType where
   toQL (FieldType flex optn tn)
-    = if flex then "FLEXIBLE TYPE " else "TYPE "
-    <> if optn then "option<" <> toQL tn <> ">" else toQL tn
+    = maybe "" (const "FLEXIBLE ") flex
+    <> "TYPE "
+    <> if isJust optn then "option<" <> toQL tn <> ">" else toQL tn
 
 data Tokenizer
   = BLANK
@@ -1024,7 +1029,7 @@ data Define
   | DefUser UserName UserScope (Maybe UserPassword) (Maybe UserRole)
   | DefToken TokenName (Maybe TokenScope) TokenType TokenValue
   | DefScope ScopeName Duration SignUpExp SignInExp
-  | DefTable TableName (Maybe Drop) (Maybe SchemaType) (Maybe AsTableViewExp) (Maybe Duration) (Maybe TablePermissions)
+  | DefTable TableName (Maybe DROP) (Maybe SchemaType) (Maybe AsTableViewExp) (Maybe Duration) (Maybe TablePermissions)
   | DefEvent EventName TableName (Maybe WhenExp) ThenExp
   | DefField Field TableName (Maybe FieldType) (Maybe DefaultExp) (Maybe ValueExp) (Maybe AssertExp) (Maybe TablePermissions)
   | DefAnalyzer AnalyzerName (Maybe [Tokenizer]) (Maybe [Filter])

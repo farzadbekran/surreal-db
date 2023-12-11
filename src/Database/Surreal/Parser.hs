@@ -894,6 +894,7 @@ userScope = label "userScope" $ lexeme $ do
   choice [ caseInsensitiveSymbol "OWNER" $> USROOT
          , caseInsensitiveSymbol "NAMESPACE" $> USNS
          , caseInsensitiveSymbol "DATABASE" $> USDB
+         , caseInsensitiveSymbol "SCOPE" >> (pack <$> some alphaNumChar) <&> USScope
          ]
 
 userPass :: Parser UserPassword
@@ -919,6 +920,201 @@ defUser = label "defUser" $ lexeme $ do
   role <- optional userRole
   return $ DefUser un scope pass role
 
+tokenScope :: Parser TokenScope
+tokenScope = label "tokenScope" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "ON"
+  choice [ caseInsensitiveSymbol "NAMESPACE" $> TSNS
+         , caseInsensitiveSymbol "DATABASE" $> TSDB
+         , caseInsensitiveSymbol "SCOPE" >> (pack <$> some alphaNumChar) <&> TSScope
+         ]
+
+tokenType :: Parser TokenType
+tokenType = label "tokenType" $ lexeme $ choice $ map try
+  [ caseInsensitiveSymbol "EDDSA" $> EDDSA
+  , caseInsensitiveSymbol "ES256" $> ES256
+  , caseInsensitiveSymbol "ES384" $> ES384
+  , caseInsensitiveSymbol "ES512" $> ES512
+  , caseInsensitiveSymbol "PS256" $> PS256
+  , caseInsensitiveSymbol "PS384" $> PS384
+  , caseInsensitiveSymbol "PS512" $> PS512
+  , caseInsensitiveSymbol "RS256" $> RS256
+  , caseInsensitiveSymbol "RS384" $> RS384
+  , caseInsensitiveSymbol "RS512" $> RS512
+  ]
+
+defToken :: Parser Define
+defToken = label "defToken" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFINE"
+  _ <- caseInsensitiveSymbol "TOKEN"
+  tn <- pack <$> some alphaNumChar
+  scope <- optional tokenScope
+  _ <- caseInsensitiveSymbol "TYPE"
+  t <- tokenType
+  DefToken tn scope t <$> (pack <$> some alphaNumChar)
+
+defScope :: Parser Define
+defScope = label "defScope" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFINE"
+  _ <- caseInsensitiveSymbol "SCOPE"
+  sn <- pack <$> some alphaNumChar
+  _ <- caseInsensitiveSymbol "SESSION"
+  dur <- durationParser
+  _ <- caseInsensitiveSymbol "SIGNUP"
+  signUpExp <- exp
+  _ <- caseInsensitiveSymbol "SIGNIN"
+  DefScope sn dur signUpExp <$> exp
+
+operationType :: Parser OperationType
+operationType = label "operationType" $ lexeme $ choice
+  [ caseInsensitiveSymbol "SELECT" $> OTSelect
+  , caseInsensitiveSymbol "CREATE" $> OTCreate
+  , caseInsensitiveSymbol "UPDATE" $> OTUpdate
+  , caseInsensitiveSymbol "DELETE" $> OTDelete
+  ]
+
+tablePermissionsFor :: Parser TablePermissions
+tablePermissionsFor = label "tablePermissionsFor" $ lexeme $ do
+  ps <- some $ do
+    _ <- caseInsensitiveSymbol "FOR"
+    ots <- sepBy operationType (lexeme $ char ',')
+    e <- exp
+    return (ots, e)
+  return $ TablePermissions ps
+
+tablePermissions :: Parser TablePermissions
+tablePermissions = label "tablePermissions" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "PERMISSIONS"
+  choice
+    [ caseInsensitiveSymbol "NONE" $> TPNONE
+    , caseInsensitiveSymbol "FULL" $> TPFULL
+    , tablePermissionsFor
+    ]
+
+defTable :: Parser Define
+defTable = label "defTable" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFINE"
+  _ <- caseInsensitiveSymbol "TABLE"
+  tn <- tableName
+  mDrop <- optional $ caseInsensitiveSymbol "DROP" $> DROP
+  st <- optional $ choice $ map try
+    [ caseInsensitiveSymbol "SCHEMAFULL" $> SCHEMAFULL
+    , caseInsensitiveSymbol "SCHEMALESS" $> SCHEMALESS
+    ]
+  as <- optional $ caseInsensitiveSymbol "AS" >> selectE
+  dur <- optional $ caseInsensitiveSymbol "CHANGEFEED" >> durationParser
+  DefTable tn mDrop st as dur <$> optional tablePermissions
+
+defEvent :: Parser Define
+defEvent = label "defEvent" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFINE"
+  _ <- caseInsensitiveSymbol "EVENT"
+  en <- pack <$> some alphaNumChar
+  _ <- caseInsensitiveSymbol "ON"
+  _ <- optional $ caseInsensitiveSymbol "TABLE"
+  tn <- tableName
+  whenE <- optional $ caseInsensitiveSymbol "WHEN" >> exp
+  _ <- caseInsensitiveSymbol "THEN"
+  DefEvent en tn whenE <$> exp
+
+fieldType :: Parser FieldType
+fieldType = label "fieldType" $ lexeme $ do
+  flex <- optional $ caseInsensitiveSymbol "FLEXIBLE" $> Flexible
+  _ <- caseInsensitiveSymbol "TYPE"
+  mOptional <- optional $ caseInsensitiveSymbol "option<" $> Optional
+  t <- pack <$> some alphaNumChar
+  _ <- if isJust mOptional then return () else void $ caseInsensitiveSymbol ">"
+  return $ FieldType flex mOptional t
+
+defField :: Parser Define
+defField = label "defField" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFINE"
+  _ <- caseInsensitiveSymbol "FIELD"
+  f <- field
+  _ <- caseInsensitiveSymbol "ON"
+  _ <- optional $ caseInsensitiveSymbol "TABLE"
+  tn <- tableName
+  ft <- optional fieldType
+  defaultE <- optional $ caseInsensitiveSymbol "DEFAULT" >> exp
+  valE <- optional $ caseInsensitiveSymbol "VALUE" >> exp
+  assertE <- optional $ caseInsensitiveSymbol "ASSERT" >> exp
+  tp <- optional tablePermissions
+  return $ DefField f tn ft defaultE valE assertE tp
+
+tokenizer :: Parser Tokenizer
+tokenizer = label "tokenizer" $ lexeme $ choice
+  [ caseInsensitiveSymbol "BLANK" $> BLANK
+  , caseInsensitiveSymbol "CAMEL" $> CAMEL
+  , caseInsensitiveSymbol "CLASS" $> CLASS
+  , caseInsensitiveSymbol "PUNCT" $> PUNCT
+  ]
+
+edgengram :: Parser Filter
+edgengram = label "edgengram" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "edgengram("
+  mn <- intParser
+  _ <- caseInsensitiveSymbol ","
+  mx <- intParser
+  _ <- caseInsensitiveSymbol ")"
+  return $ Edgengram mn mx
+
+snowball :: Parser Filter
+snowball = label "snowball" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "snowball("
+  ln <- pack <$> some alphaNumChar
+  _ <- caseInsensitiveSymbol ")"
+  return $ Snowball ln
+
+filterParser :: Parser Filter
+filterParser = label "filter" $ lexeme $ choice
+  [ caseInsensitiveSymbol "ASCII" $> ASCII
+  , caseInsensitiveSymbol "UPPERCASE" $> Uppercase
+  , caseInsensitiveSymbol "LOWERCASE" $> Lowercase
+  , edgengram
+  , snowball
+  ]
+
+defAnalyzer :: Parser Define
+defAnalyzer = label "defAnalyzer" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFINE"
+  _ <- caseInsensitiveSymbol "ANALYZER"
+  an <- pack <$> some alphaNumChar
+  toks <- optional $ caseInsensitiveSymbol "TOKENIZERS" >> sepBy tokenizer (lexeme $ char ',')
+  filters <- optional $ caseInsensitiveSymbol "FILTERS" >> sepBy filterParser (lexeme $ char ',')
+  return $ DefAnalyzer an toks filters
+
+bm25 :: Parser BM25
+bm25 = label "bm25" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "BM25"
+  ps <- optional $ do
+    k1 <- floatParser
+    _ <- caseInsensitiveSymbol ","
+    b <- floatParser
+    return (k1,b)
+  return $ BM25 ps
+
+searchAnalyzer :: Parser SearchAnalyzer
+searchAnalyzer = label "searchAnalyzer" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "SEARCH"
+  _ <- caseInsensitiveSymbol "ANALYZER"
+  an <- pack <$> some alphaNumChar
+  bm <- optional bm25
+  hl <- optional $ caseInsensitiveSymbol "HIGHLIGHTS" $> HIGHLIGHTS
+  return $ SearchAnalyzer an bm hl
+
+defIndex :: Parser Define
+defIndex = label "defIndex" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFINE"
+  _ <- caseInsensitiveSymbol "INDEX"
+  indxN <- pack <$> some alphaNumChar
+  _ <- caseInsensitiveSymbol "ON"
+  _ <- optional $ caseInsensitiveSymbol "TABLE"
+  tn <- tableName
+  _ <- caseInsensitiveSymbol "FIELDS" <|> caseInsensitiveSymbol "COLUMNS"
+  fs <- sepBy field (lexeme $ char ',')
+  u <- optional
+    $ (caseInsensitiveSymbol "UNIQUE" $> Left UNIQUE) <|> Right <$> searchAnalyzer
+  return $ DefIndex indxN tn fs u
+
 defineS :: Parser Statement
 defineS = label "defineS" $ lexeme $
   DefineS <$> choice
@@ -926,6 +1122,13 @@ defineS = label "defineS" $ lexeme $
     [ defNamespace
     , defDatabase
     , defUser
+    , defToken
+    , defScope
+    , defTable
+    , defEvent
+    , defField
+    , defAnalyzer
+    , defIndex
     ])
 
 statement :: Parser Statement
