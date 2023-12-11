@@ -33,8 +33,8 @@ data Operator = (:&&) | (:||) | (:??) | (:?:) | (:=) | (:!=) | (:==) | (:?=) | (
 
 instance ToQL Operator where
   toQL = \case
-    (:&&) -> "&&"
-    (:||) -> "||"
+    (:&&) -> "AND"
+    (:||) -> "OR"
     (:??) -> "??"
     (:?:) -> "?:"
     (:=) -> "="
@@ -732,6 +732,8 @@ data Exp
   | DeleteE (Maybe ONLY) Target (Maybe WHERE) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
   | UpdateE (Maybe ONLY) Target UpdateVal (Maybe WHERE) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
   | RelateE (Maybe ONLY) RelateTarget (Maybe UpdateVal) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
+  | WhereE WHERE -- ^ needed this to support table permissions support
+  | InParenE Exp
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Exp where
@@ -812,6 +814,8 @@ instance ToQL Exp where
                , renderIfJust mTimeout
                , renderIfJust mParallel
                ]
+    WhereE w -> toQL w
+    InParenE e -> "(" <> toQL e <> ")"
 
 instance HasInput Exp where
   getInputs = \case
@@ -845,8 +849,10 @@ instance HasInput Exp where
       -> getInputs target <> maybe [] getInputs v
     DeleteE _ target mWhere _ _ _
       -> getInputs target <> maybe [] getInputs mWhere
+    WhereE w -> getInputs w
+    InParenE e -> getInputs e
 
-data UserScope = USROOT | USNS | USDB | USScope ScopeName
+data UserScope = USROOT | USNS | USDB
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL UserScope where
@@ -854,7 +860,6 @@ instance ToQL UserScope where
     USROOT -> "ON ROOT"
     USNS -> "ON NAMESPACE"
     USDB -> "ON DATABASE"
-    USScope sn -> "ON SCOPE " <> toQL sn
 
 data UserPassword
   = PASSWORD Text
@@ -871,9 +876,9 @@ data UserRole = UROWNER | UREDITOR | URVIEWER
 
 instance ToQL UserRole where
   toQL = \case
-    UROWNER -> "ROLES OWNER"
-    UREDITOR -> "ROLES EDITOR"
-    URVIEWER -> "ROLES VIEWER"
+    UROWNER -> "OWNER"
+    UREDITOR -> "EDITOR"
+    URVIEWER -> "VIEWER"
 
 data TokenScope
   = TSNS
@@ -885,7 +890,7 @@ instance ToQL TokenScope where
   toQL = \case
     TSNS -> "ON NAMESPACE"
     TSDB -> "ON DATABASE"
-    TSScope t -> "ON " <> t
+    TSScope t -> "ON SCOPE " <> t
 
 data TokenType = EDDSA | ES256 | ES384 | ES512 | PS256 | PS384 | PS512 | RS256 | RS384 | RS512
   deriving (Eq, Generic, Read, Show)
@@ -940,7 +945,7 @@ instance ToQL TablePermissions where
     TablePermissions perms -> prepText $
       "PERMISSIONS" : map renderPermission perms
       where
-        renderPermission (ots, e) = intercalate "," (map toQL ots) <> toQL e
+        renderPermission (ots, e) = "FOR " <> intercalate "," (map toQL ots) <> " " <> toQL e
 
 data Flexible = Flexible
   deriving (Eq, Generic, Read, Show)
@@ -1004,12 +1009,9 @@ newtype BM25 = BM25 (Maybe (K1, B))
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL BM25 where
-  toQL (BM25 mParams) = prepText
-    [ "BM25"
-    , case mParams of
-        Just (k1, b) -> "(" <> tshow k1 <> ", " <> tshow b <> ")"
-        Nothing -> ""
-    ]
+  toQL (BM25 mParams) = "BM25" <> case mParams of
+    Just (k1, b) -> "(" <> tshow k1 <> ", " <> tshow b <> ")"
+    Nothing -> ""
 
 data SearchAnalyzer = SearchAnalyzer AnalyzerName (Maybe BM25) (Maybe HIGHLIGHTS)
   deriving (Eq, Generic, Read, Show)
@@ -1026,9 +1028,9 @@ instance ToQL SearchAnalyzer where
 data Define
   = DefNamespace Namespace
   | DefDatabase Database
-  | DefUser UserName UserScope (Maybe UserPassword) (Maybe UserRole)
-  | DefToken TokenName (Maybe TokenScope) TokenType TokenValue
-  | DefScope ScopeName Duration SignUpExp SignInExp
+  | DefUser UserName UserScope (Maybe UserPassword) (Maybe [UserRole])
+  | DefToken TokenName TokenScope TokenType TokenValue
+  | DefScope ScopeName (Maybe Duration) (Maybe SignUpExp) (Maybe SignInExp)
   | DefTable TableName (Maybe DROP) (Maybe SchemaType) (Maybe AsTableViewExp) (Maybe Duration) (Maybe TablePermissions)
   | DefEvent EventName TableName (Maybe WhenExp) ThenExp
   | DefField Field TableName (Maybe FieldType) (Maybe DefaultExp) (Maybe ValueExp) (Maybe AssertExp) (Maybe TablePermissions)
@@ -1040,29 +1042,37 @@ instance ToQL Define where
   toQL = \case
     DefNamespace ns -> "DEFINE NAMESPACE " <> toQL ns
     DefDatabase db -> "DEFINE DATABASE " <> toQL db
-    DefUser un level mPass mRole
+    DefUser un level mPass mRoles
       -> prepText
          [ "DEFINE USER"
          , toQL un
          , toQL level
          , renderIfJust mPass
-         , renderIfJust mRole
+         , case mRoles of
+             Just rs -> prepText $ "ROLES" : intersperse "," (map toQL rs)
+             Nothing -> ""
          ]
-    DefToken tn mTs tt tv
+    DefToken tn ts tt tv
       -> prepText
          [ "DEFINE TOKEN"
          , toQL tn
-         , renderIfJust mTs
+         , toQL ts
          , toQL tt
-         , toQL tv
+         , "VALUE '" <> toQL tv <> "'"
          ]
-    DefScope sn dur signUp signIn
+    DefScope sn mDur mSignUp mSignIn
       -> prepText
          [ "DEFINE SCOPE"
          , toQL sn
-         , "SESSION " <> toQL dur
-         , "SIGNUP " <> toQL signUp
-         , "SIGNIN " <> toQL signIn
+         , case mDur of
+             Just dur -> "SESSION " <> toQL dur
+             Nothing -> ""
+         , case mSignUp of
+             Just signUp -> "SIGNUP " <> toQL signUp
+             Nothing -> ""
+         , case mSignIn of
+             Just signIn -> "SIGNIN " <> toQL signIn
+             Nothing -> ""
          ]
     DefTable tn mDrop mSchema mExp mDur mPerms
       -> prepText
@@ -1071,7 +1081,7 @@ instance ToQL Define where
          , renderIfJust mDrop
          , renderIfJust mSchema
          , case mExp of
-             Just e  -> "AS " <> toQL e
+             Just e  -> "AS (" <> toQL e <> ")"
              Nothing -> ""
          , case mDur of
              Just dur -> "CHANGEFEED " <> toQL dur
@@ -1185,7 +1195,7 @@ newtype Block
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Block where
-  toQL (Block ls) = prepText (intersperse ";\n" $ map toQL ls) <> ";"
+  toQL (Block ls) = foldl1 (<>) (intersperse ";\n" $ map toQL ls) <> ";\n"
 
 instance HasInput Block where
   getInputs (Block ls) = concatMap getInputs ls

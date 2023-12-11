@@ -14,9 +14,7 @@ import           Data.Aeson
 import           Data.Aeson.KeyMap
 import           Data.Row
 import           Data.Row.Aeson                  ()
-import           Database.Surreal.AST            ( ID (TextID),
-                                                   RecordID (RecordID),
-                                                   TableName (TableName) )
+import           Database.Surreal.AST
 import           Database.Surreal.ASTJSON        ()
 import           Database.Surreal.TH
 import           Database.Surreal.WS.RPC.Surreal as RPC
@@ -38,7 +36,7 @@ test = do
               fetch cat;
               --select 1 + 2 as ppp :: Int from artist limit 1;
               |]
-    print t
+    putStr t
     runQuery () q
   print res
 
@@ -54,7 +52,7 @@ test2 = do
               limit 2
               fetch cat) :: (Vector TestRecType2);
               |]
-    print t
+    putStr t
     runQuery rid q
   print res
 
@@ -67,7 +65,7 @@ insertTest = do
               (INSERT INTO test (id, name, fname) VALUES (test:uuid(), %1 :: Text, %2 :: Text), ("test:farzad2", "farzad2", "bekran2")
                 ON DUPLICATE KEY UPDATE numUpdate += 1) :: Vector TestRecType3;
               |]
-    print t
+    putStr t
     runQuery ("inputval1","inputval \" 2") q
   print res
 
@@ -79,7 +77,7 @@ insertTest2 = do
           [sql|
               INSERT INTO test { name : "farzad", fname : "bekran" } :: Vector TestRecType3;
               |]
-    print t
+    putStr t
     runQuery () q
   print res
 
@@ -91,7 +89,7 @@ insertTest3 = do
           [sql|
               INSERT INTO test [{id : test:uuid(), name : "farzad", fname : "bekran" },{ name : "farzad2", fname : "bekran2" }] :: Vector TestRecType3;
               |]
-    print t
+    putStr t
     runQuery () q
   print res
 
@@ -103,7 +101,7 @@ createTest1 = do
           [sql|
               (CREATE test CONTENT {name: "farzad create", fname: "bekran"}) :: Vector TestRecType3;
               |]
-    print t
+    putStr t
     runQuery () q
   print res
 
@@ -115,7 +113,7 @@ createTest2 = do
           [sql|
               (CREATE test SET name = "farzad create2", fname = "bekran") :: Vector TestRecType3;
               |]
-    print t
+    putStr t
     runQuery () q
   print res
 
@@ -127,7 +125,7 @@ createTest3 = do
           [sql|
               (CREATE test SET name = "farzad create3", fname = "bekran" RETURN id, name, fname) :: Vector TestRecType3;
               |]
-    print t
+    putStr t
     runQuery () q
   print res
 
@@ -139,7 +137,7 @@ deleteTest1 = do
           [sql|
               (DELETE test) :: ();
               |]
-    print t
+    putStr t
     runQuery () q
   print res
 
@@ -153,7 +151,7 @@ deleteTest2 = do
           [sql|
               (DELETE test where id = %1 :: RecordID) :: ();
               |]
-    print t
+    putStr t
     runQuery rid q
   print res
 
@@ -167,7 +165,7 @@ updateTest1 = do
           [sql|
               (UPDATE test SET name = "updated Name" where id = (%1 :: RecordID) RETURN NONE) :: ();
               |]
-    print t
+    putStr t
     runQuery rid q
   print res
 
@@ -179,7 +177,7 @@ updateTest2 = do
           [sql|
               (UPDATE artist:00d3xv269u0x5o37q16u->create->product SET name = "updated Name") :: ();
               |]
-    print t
+    putStr t
     runQuery () q
   print res
 
@@ -191,7 +189,7 @@ selectTest1 = do
           [sql|
               (SELECT * FROM person WHERE ->knows->person->(knows WHERE influencer = true) TIMEOUT 5s) :: Value;
               |]
-    print t
+    putStr t
     runQuery () q
   print res
 
@@ -203,6 +201,54 @@ relateTest1 = do
           [sql|
               (RELATE person:l19zjikkw1p1h9o6ixrg->wrote->article:8nkk6uj4yprt49z7y3zm SET time.written = "just now!") :: Value;
               |]
-    print t
+    putStr t
+    runQuery () q
+  print res
+
+defineTest1 :: IO ()
+defineTest1 = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q@(Query t _ _) =
+          [sql|
+              DEFINE NAMESPACE test;
+              DEFINE DATABASE test;
+              DEFINE USER farzad ON NAMESPACE PASSWORD 'farzad' ROLES viewer, editor;
+              DEFINE USER farzad ON DATABASE PASSHASH 'farzad' ROLES owner;
+              DEFINE USER farzad ON ROOT PASSHASH 'farzad' ROLES owner;
+              DEFINE TOKEN token_name ON NAMESPACE TYPE EDDSA VALUE '123';
+              DEFINE TOKEN token_name ON SCOPE scope_name TYPE EDDSA VALUE '123';
+              DEFINE SCOPE scope_name;
+              DEFINE SCOPE scope_name SESSION 24h;
+              DEFINE SCOPE scope_name SESSION 24h SIGNUP (select * from test);
+              DEFINE SCOPE scope_name SESSION 24h SIGNUP (select * from test) SIGNIN (select * from test2);
+              DEFINE TABLE test DROP;
+              DEFINE TABLE test SCHEMAFULL;
+              DEFINE TABLE test SCHEMALESS;
+              DEFINE TABLE test SCHEMAFULL AS Select * from test2 WHERE f1 = 1 group by f2;
+              DEFINE TABLE test SCHEMAFULL AS (Select * from test2 WHERE f1 = 1 group by f2) PERMISSIONS NONE;
+              DEFINE TABLE test SCHEMAFULL AS (Select * from test2 WHERE f1 = 1 group by f2) PERMISSIONS FULL;
+              DEFINE TABLE test SCHEMAFULL AS (Select * from test2 WHERE f1 = 1 group by f2)
+                CHANGEFEED 1h
+                PERMISSIONS
+                  FOR select,create WHERE f1 = 1
+                  FOR delete WHERE (f2 = 2) OR (f3 = 3);
+              DEFINE EVENT my_event ON test WHEN a = 1 THEN b = 2;
+              DEFINE FIELD my_field ON TABLE test;
+              DEFINE FIELD my_field ON TABLE test FLEXIBLE TYPE option<string>;
+              DEFINE FIELD my_field ON TABLE test FLEXIBLE TYPE option<string>
+                VALUE 1
+                ASSERT f1 > 10
+                PERMISSIONS
+                  FOR select,create WHERE f1 = 1
+                  FOR delete WHERE (f2 = 2) OR (f3 = 3);
+              DEFINE ANALYZER my_analyzer TOKENIZERS blank FILTERS lowercase;
+              DEFINE ANALYZER my_analyzer TOKENIZERS blank FILTERS edgengram(3,10);
+              DEFINE ANALYZER my_analyzer TOKENIZERS blank FILTERS snowball(english);
+              DEFINE INDEX my_index ON test FIELDS f1,f2 UNIQUE;
+              DEFINE INDEX my_index ON test FIELDS f1,f2 SEARCH ANALYZER my_analyzer BM25;
+              DEFINE INDEX my_index ON test FIELDS f1,f2 SEARCH ANALYZER my_analyzer BM25(0.1,0.2);
+              |]
+    putStr t
     runQuery () q
   print res

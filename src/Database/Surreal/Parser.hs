@@ -31,8 +31,8 @@ lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
 
 -- | Parse the exact String given
-symbol :: String -> Parser String
-symbol = L.symbol sc
+symbol :: String -> Parser Text
+symbol s = pack <$> L.symbol sc s
 
 -- | Match the string 's', accepting either lowercase or uppercase form of each character
 caseInsensitiveSymbol :: String -> Parser String
@@ -44,6 +44,10 @@ betweenParens = between (lexeme $ char '(') (lexeme $ char ')')
 maybeBetweenParens :: Parser a -> Parser a
 maybeBetweenParens p = p <|> betweenParens p
 
+identifierWord :: Parser Text
+identifierWord = label "identifierWord" $ lexeme $
+  pack <$> some (satisfy isValidIdentifierChar)
+
 -- | Type Parsers
 
 simpleType :: Parser TypeDef
@@ -53,7 +57,7 @@ simpleType = do
     $ try
     $ lexeme
     $ between (char '(') (char ')') simpleType <|> typeCon
-  return $ T prefix postfix
+  return $ T (unpack prefix) postfix
 
 parseType :: Parser TypeDef
 parseType = lexeme $ maybeBetweenParens simpleType
@@ -96,7 +100,7 @@ intParser = label "Int64" $ do
 
 floatParser :: Parser Float
 floatParser = label "Float" $ do
-  s <- some numberChar <> symbol "." <> some numberChar
+  s <- some numberChar <> (unpack <$> symbol ".") <> some numberChar
   let mr = readMay s :: Maybe Float
     in
     case mr of
@@ -347,13 +351,12 @@ litE :: Parser Exp
 litE = label "LitE" $ lexeme $ LitE <$> literal
 
 constE :: Parser Exp
-constE = label "ConstE" $ lexeme $ ConstE . pack <$> some alphaNumChar
+constE = label "ConstE" $ lexeme $ ConstE <$> identifierWord
 
 param :: Parser Param
 param = label "Param" $ lexeme $ do
   _ <- char '$'
-  p <- pack <$> some alphaNumChar
-  return $ Param p
+  Param <$> identifierWord
 
 paramE :: Parser Exp
 paramE = label "ParamE" $ lexeme $ ParamE <$> param
@@ -378,16 +381,16 @@ ifThenElseE = label "IfThenElseE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "ELSE"
   IfThenElseE e1 e2 <$> exp
 
-parseCapitalWord :: Parser String
+parseCapitalWord :: Parser Text
 parseCapitalWord = lexeme $ do
   initialLetter <- upperChar
-  rest <- some alphaNumChar
-  return $ initialLetter : rest
+  rest <- unpack <$> identifierWord
+  return $ pack $ initialLetter : rest
 
 typeCon :: Parser TypeDef
 typeCon = do
-  w <- try $ lexeme parseCapitalWord
-  return $ T w []
+  w <- try parseCapitalWord
+  return $ T (unpack w) []
 
 outEdge :: Parser Edge
 outEdge = label "OutEdge" $ lexeme $ do
@@ -467,7 +470,7 @@ index :: Parser INDEX
 index = label "INDEX" $ lexeme $ noindex <|> indexes
   where
     noindex = caseInsensitiveSymbol "NOINDEX" $> NOINDEX
-    indexes = INDEX <$> sepBy (pack <$> some alphaNumChar) (char ',')
+    indexes = INDEX <$> sepBy identifierWord (char ',')
 
 with :: Parser WITH
 with = label "WITH" $ lexeme $ do
@@ -556,7 +559,7 @@ explain = label "EXPLAIN" $ lexeme $ do
 
 tableName :: Parser TableName
 tableName = label "TableName" $ lexeme
-  $ TableName <$> (pack <$> some alphaNumChar)
+  $ TableName <$> identifierWord
   <|> TableNameInput <$> input
 
 selectE :: Parser Exp
@@ -807,7 +810,10 @@ operatorTable = [ [ E.Postfix typedExp
                   , E.InfixN (symbol "@@" $> OPE (:@@))
                   ]
                 , [ E.InfixN (symbol "&&" $> OPE (:&&))
-                  , E.InfixN (symbol "||" $> OPE (:||))]
+                  , E.InfixN (symbol "AND" $> OPE (:&&))
+                  , E.InfixN (symbol "||" $> OPE (:||))
+                  , E.InfixN (symbol "OR" $> OPE (:||))
+                  ]
                 ]
 
 exp :: Parser Exp
@@ -826,35 +832,33 @@ term = sc
               , updateE
               , relateE
               , deleteE
+              , WhereE <$> where_
               , appE
               , litE
               , constE
               , edgeSelectorE
-              , betweenParens exp
+              , InParenE <$> betweenParens exp
               ])
 
 useNSDB :: Parser Statement
 useNSDB = label "useNSDB" $ lexeme $ do
   _ <- caseInsensitiveSymbol "USE"
   _ <- caseInsensitiveSymbol "NS"
-  ns <- pack <$> some alphaNumChar
+  ns <- identifierWord
   _ <- caseInsensitiveSymbol "DB"
-  db <- pack <$> some alphaNumChar
-  return $ UseS $ USE ns db
+  UseS . USE ns <$> identifierWord
 
 useNS :: Parser Statement
 useNS = label "useNSDB" $ lexeme $ do
   _ <- caseInsensitiveSymbol "USE"
   _ <- caseInsensitiveSymbol "NS"
-  ns <- pack <$> some alphaNumChar
-  return $ UseS $ USE_NS ns
+  UseS . USE_NS <$> identifierWord
 
 useDB :: Parser Statement
 useDB = label "useNSDB" $ lexeme $ do
   _ <- caseInsensitiveSymbol "USE"
   _ <- caseInsensitiveSymbol "DB"
-  db <- pack <$> some alphaNumChar
-  return $ UseS $ USE_DB db
+  UseS . USE_DB <$> identifierWord
 
 useS :: Parser Statement
 useS = label "useS" $ lexeme $ choice $ map try
@@ -880,21 +884,20 @@ defNamespace :: Parser Define
 defNamespace = label "defNamespace" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "NAMESPACE"
-  DefNamespace <$> (pack <$> some alphaNumChar)
+  DefNamespace <$> identifierWord
 
 defDatabase :: Parser Define
 defDatabase = label "defDatabase" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "DATABASE"
-  DefDatabase <$> (pack <$> some alphaNumChar)
+  DefDatabase <$> identifierWord
 
 userScope :: Parser UserScope
 userScope = label "userScope" $ lexeme $ do
   _ <- caseInsensitiveSymbol "ON"
-  choice [ caseInsensitiveSymbol "OWNER" $> USROOT
+  choice [ caseInsensitiveSymbol "ROOT" $> USROOT
          , caseInsensitiveSymbol "NAMESPACE" $> USNS
          , caseInsensitiveSymbol "DATABASE" $> USDB
-         , caseInsensitiveSymbol "SCOPE" >> (pack <$> some alphaNumChar) <&> USScope
          ]
 
 userPass :: Parser UserPassword
@@ -914,18 +917,18 @@ defUser :: Parser Define
 defUser = label "defUser" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "USER"
-  un <- pack <$> some alphaNumChar
+  un <- identifierWord
   scope <- userScope
   pass <- optional userPass
-  role <- optional userRole
-  return $ DefUser un scope pass role
+  roles <- optional $ caseInsensitiveSymbol "ROLES" >> sepBy userRole (lexeme $ char ',')
+  return $ DefUser un scope pass roles
 
 tokenScope :: Parser TokenScope
 tokenScope = label "tokenScope" $ lexeme $ do
   _ <- caseInsensitiveSymbol "ON"
   choice [ caseInsensitiveSymbol "NAMESPACE" $> TSNS
          , caseInsensitiveSymbol "DATABASE" $> TSDB
-         , caseInsensitiveSymbol "SCOPE" >> (pack <$> some alphaNumChar) <&> TSScope
+         , caseInsensitiveSymbol "SCOPE" >> identifierWord <&> TSScope
          ]
 
 tokenType :: Parser TokenType
@@ -946,23 +949,22 @@ defToken :: Parser Define
 defToken = label "defToken" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "TOKEN"
-  tn <- pack <$> some alphaNumChar
-  scope <- optional tokenScope
+  tn <- identifierWord
+  scope <- tokenScope
   _ <- caseInsensitiveSymbol "TYPE"
   t <- tokenType
-  DefToken tn scope t <$> (pack <$> some alphaNumChar)
+  _ <- caseInsensitiveSymbol "VALUE"
+  DefToken tn scope t <$> quotedText
 
 defScope :: Parser Define
 defScope = label "defScope" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "SCOPE"
-  sn <- pack <$> some alphaNumChar
-  _ <- caseInsensitiveSymbol "SESSION"
-  dur <- durationParser
-  _ <- caseInsensitiveSymbol "SIGNUP"
-  signUpExp <- exp
-  _ <- caseInsensitiveSymbol "SIGNIN"
-  DefScope sn dur signUpExp <$> exp
+  sn <- identifierWord
+  mDur <- optional $ caseInsensitiveSymbol "SESSION" >> durationParser
+  mSignUp <- optional $ caseInsensitiveSymbol "SIGNUP" >> exp
+  mSignIn <- optional $ caseInsensitiveSymbol "SIGNIN" >> exp
+  return $ DefScope sn mDur mSignUp mSignIn
 
 operationType :: Parser OperationType
 operationType = label "operationType" $ lexeme $ choice
@@ -1000,7 +1002,7 @@ defTable = label "defTable" $ lexeme $ do
     [ caseInsensitiveSymbol "SCHEMAFULL" $> SCHEMAFULL
     , caseInsensitiveSymbol "SCHEMALESS" $> SCHEMALESS
     ]
-  as <- optional $ caseInsensitiveSymbol "AS" >> selectE
+  as <- optional $ caseInsensitiveSymbol "AS" >> maybeBetweenParens selectE
   dur <- optional $ caseInsensitiveSymbol "CHANGEFEED" >> durationParser
   DefTable tn mDrop st as dur <$> optional tablePermissions
 
@@ -1008,7 +1010,7 @@ defEvent :: Parser Define
 defEvent = label "defEvent" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "EVENT"
-  en <- pack <$> some alphaNumChar
+  en <- identifierWord
   _ <- caseInsensitiveSymbol "ON"
   _ <- optional $ caseInsensitiveSymbol "TABLE"
   tn <- tableName
@@ -1020,9 +1022,9 @@ fieldType :: Parser FieldType
 fieldType = label "fieldType" $ lexeme $ do
   flex <- optional $ caseInsensitiveSymbol "FLEXIBLE" $> Flexible
   _ <- caseInsensitiveSymbol "TYPE"
-  mOptional <- optional $ caseInsensitiveSymbol "option<" $> Optional
-  t <- pack <$> some alphaNumChar
-  _ <- if isJust mOptional then return () else void $ caseInsensitiveSymbol ">"
+  mOptional <- optional $ try $ caseInsensitiveSymbol "option<" $> Optional
+  t <- identifierWord
+  when (isJust mOptional) $ void $ caseInsensitiveSymbol ">"
   return $ FieldType flex mOptional t
 
 defField :: Parser Define
@@ -1060,7 +1062,7 @@ edgengram = label "edgengram" $ lexeme $ do
 snowball :: Parser Filter
 snowball = label "snowball" $ lexeme $ do
   _ <- caseInsensitiveSymbol "snowball("
-  ln <- pack <$> some alphaNumChar
+  ln <- identifierWord
   _ <- caseInsensitiveSymbol ")"
   return $ Snowball ln
 
@@ -1077,7 +1079,7 @@ defAnalyzer :: Parser Define
 defAnalyzer = label "defAnalyzer" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "ANALYZER"
-  an <- pack <$> some alphaNumChar
+  an <- identifierWord
   toks <- optional $ caseInsensitiveSymbol "TOKENIZERS" >> sepBy tokenizer (lexeme $ char ',')
   filters <- optional $ caseInsensitiveSymbol "FILTERS" >> sepBy filterParser (lexeme $ char ',')
   return $ DefAnalyzer an toks filters
@@ -1086,9 +1088,11 @@ bm25 :: Parser BM25
 bm25 = label "bm25" $ lexeme $ do
   _ <- caseInsensitiveSymbol "BM25"
   ps <- optional $ do
+    _ <- caseInsensitiveSymbol "("
     k1 <- floatParser
     _ <- caseInsensitiveSymbol ","
     b <- floatParser
+    _ <- caseInsensitiveSymbol ")"
     return (k1,b)
   return $ BM25 ps
 
@@ -1096,7 +1100,7 @@ searchAnalyzer :: Parser SearchAnalyzer
 searchAnalyzer = label "searchAnalyzer" $ lexeme $ do
   _ <- caseInsensitiveSymbol "SEARCH"
   _ <- caseInsensitiveSymbol "ANALYZER"
-  an <- pack <$> some alphaNumChar
+  an <- identifierWord
   bm <- optional bm25
   hl <- optional $ caseInsensitiveSymbol "HIGHLIGHTS" $> HIGHLIGHTS
   return $ SearchAnalyzer an bm hl
@@ -1105,7 +1109,7 @@ defIndex :: Parser Define
 defIndex = label "defIndex" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "INDEX"
-  indxN <- pack <$> some alphaNumChar
+  indxN <- identifierWord
   _ <- caseInsensitiveSymbol "ON"
   _ <- optional $ caseInsensitiveSymbol "TABLE"
   tn <- tableName
@@ -1132,17 +1136,18 @@ defineS = label "defineS" $ lexeme $
     ])
 
 statement :: Parser Statement
-statement = lexeme $ choice $ map try
-  [ useS
-  , letS
-  , caseInsensitiveSymbol "BEGIN" $> BeginS
-  , caseInsensitiveSymbol "CANCEL" $> CancelS
-  , caseInsensitiveSymbol "COMMIT" $> CommitS
-  , caseInsensitiveSymbol "BREAK" $> BreakS
-  , caseInsensitiveSymbol "CONTINUNE" $> ContinueS
-  , forS
-  , defineS
-  ]
+statement =
+  sc >> lexeme (choice $ map try
+                [ useS
+                , letS
+                , caseInsensitiveSymbol "BEGIN" $> BeginS
+                , caseInsensitiveSymbol "CANCEL" $> CancelS
+                , caseInsensitiveSymbol "COMMIT" $> CommitS
+                , caseInsensitiveSymbol "BREAK" $> BreakS
+                , caseInsensitiveSymbol "CONTINUNE" $> ContinueS
+                , forS
+                , defineS
+                ])
 
 expLine :: Parser SurQLLine
 expLine = lexeme $ do
@@ -1163,7 +1168,8 @@ surQLLine = lexeme $ choice $ map try
   ]
 
 block :: Parser Block
-block = lexeme $ do
-  bl <- Block <$> some surQLLine
-  eof
-  return bl
+block = sc >> lexeme
+  (do
+    bl <- Block <$> some surQLLine
+    eof
+    return bl)
