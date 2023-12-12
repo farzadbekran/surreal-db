@@ -248,6 +248,8 @@ defineTest1 = do
               DEFINE INDEX my_index ON test FIELDS f1,f2 UNIQUE;
               DEFINE INDEX my_index ON test FIELDS f1,f2 SEARCH ANALYZER my_analyzer BM25;
               DEFINE INDEX my_index ON test FIELDS f1,f2 SEARCH ANALYZER my_analyzer BM25(0.1,0.2);
+              DEFINE FIELD permissions.* ON TABLE acl TYPE string;
+              (SELECT field1.* from test) :: Value;
               |]
     putStr t
     runQuery () q

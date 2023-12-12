@@ -20,6 +20,7 @@ import qualified Language.Haskell.TH  as TH
 
 getFieldLabel :: MonadFail m => Field -> m Text
 getFieldLabel = \case
+  WildCardField -> fail "Can't determine field label for WildCardField '*'!"
   SimpleField t -> return t
   IndexedField f _ -> getFieldLabel f
   FilteredField f _ -> getFieldLabel f
@@ -27,7 +28,6 @@ getFieldLabel = \case
     l1 <- getFieldLabel f1
     l2 <- getFieldLabel f2
     return $ l1 <> l2
-  FieldInput _ -> fail "Can't determine field label for FieldInput!"
 
 getEdgeLabel :: MonadFail m => Edge -> m Text
 getEdgeLabel = \case
@@ -52,7 +52,6 @@ extractSelectorTypes (Selectors ss) = mapM (\s -> do
       SelectorAs _ f -> getFieldLabel f
       EdgeSelector _ _ f -> getFieldLabel f
       TypedSelector s _ -> getSelectorLabel s
-      WildCardSelector -> fail "Can't determine selector type for WildCardSelector '*'"
 
 -- | Gives the base type for the select expression, after applying the clauses that
 -- modiify the return type like omit, value, split, etc

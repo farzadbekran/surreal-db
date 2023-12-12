@@ -287,6 +287,9 @@ literal = lexeme $ maybeBetweenParens $ choice $ map try
   , literalInput
   ]
 
+wildCardField :: Parser Field
+wildCardField = label "wildCardField" $ lexeme $ symbol "*" $> WildCardField
+
 simpleField :: Parser Field
 simpleField = label "SimpleField" $ lexeme $ do
   initial <- satisfy isAlpha
@@ -307,9 +310,6 @@ filteredField = label "FilteredField" $ lexeme $ betweenParens $ do
   f <- simpleField
   FilteredField f <$> where_
 
-fieldInput :: Parser Field
-fieldInput = label "FieldInput" $ FieldInput <$> input
-
 fieldOperatorTable :: [[E.Operator Parser Field]]
 fieldOperatorTable = [ [ E.Postfix indexedField
                        , E.InfixL (symbol "." $> CompositeField)
@@ -321,8 +321,8 @@ field = E.makeExprParser fieldTerm fieldOperatorTable
 fieldTerm :: Parser Field
 fieldTerm = lexeme $ choice $ map try
   [ filteredField
+  , wildCardField
   , simpleField
-  , fieldInput
   ]
 
 isValidIdentifierChar :: Char -> Bool
@@ -436,9 +436,6 @@ typedSelector = do
   t <- parseType
   return (`TypedSelector` t)
 
-wildCardSelector :: Parser Selector
-wildCardSelector = label "wildCardSelector" $ lexeme $ symbol "*" $> WildCardSelector
-
 -- order matters here, more specific first, ie ** before *
 selectorOperatorTable :: [[E.Operator Parser Selector]]
 selectorOperatorTable = [ [ E.Postfix selectorAs
@@ -455,7 +452,6 @@ selectorTerm = lexeme $ choice $ map try
   [ fieldSelector
   , expSelector
   , edgeSelector
-  , wildCardSelector
   ]
 
 selectors :: Parser Selectors
@@ -549,7 +545,7 @@ timeout = label "TIMEOUT" $ lexeme $ do
     ]
 
 parallel :: Parser PARALLEL
-parallel = label "PARALLEL" $ lexeme $ caseInsensitiveSymbol "PARALLEL" $> PARALLEL
+parallel = label "PARALLEL" $ caseInsensitiveSymbol "PARALLEL" $> PARALLEL
 
 explain :: Parser EXPLAIN
 explain = label "EXPLAIN" $ lexeme $ do
@@ -558,9 +554,7 @@ explain = label "EXPLAIN" $ lexeme $ do
   return $ if isJust mFull then EXPLAINFULL else EXPLAIN
 
 tableName :: Parser TableName
-tableName = label "TableName" $ lexeme
-  $ TableName <$> identifierWord
-  <|> TableNameInput <$> input
+tableName = label "TableName" $ lexeme $ TableName <$> identifierWord
 
 selectE :: Parser Exp
 selectE = label "SelectE" $ lexeme $ do
@@ -634,12 +628,12 @@ target = label "target" $ lexeme $ choice $ map try
 
 createObject :: Parser CreateVal
 createObject = label "createObject" $ lexeme $ do
-  _ <- lexeme $ caseInsensitiveSymbol "CONTENT"
+  _ <- caseInsensitiveSymbol "CONTENT"
   CreateObject <$> object_
 
 createValues :: Parser CreateVal
 createValues = label "createValues" $ lexeme $ do
-  _ <- lexeme $ caseInsensitiveSymbol "SET"
+  _ <- caseInsensitiveSymbol "SET"
   fields <- sepBy parseField (lexeme $ char ',')
   return $ CreateValues fields
   where
@@ -657,22 +651,22 @@ createVal = label "createVal" $ lexeme $ choice
 
 updateObject :: Parser UpdateVal
 updateObject = label "updateObject" $ lexeme $ do
-  _ <- lexeme $ caseInsensitiveSymbol "CONTENT"
+  _ <- caseInsensitiveSymbol "CONTENT"
   UpdateObject <$> object_
 
 updateMerge :: Parser UpdateVal
 updateMerge = label "updateMerge" $ lexeme $ do
-  _ <- lexeme $ caseInsensitiveSymbol "MERGE"
+  _ <- caseInsensitiveSymbol "MERGE"
   UpdateMerge <$> object_
 
 updatePatch :: Parser UpdateVal
 updatePatch = label "updatePatch" $ lexeme $ do
-  _ <- lexeme $ caseInsensitiveSymbol "PATCH"
+  _ <- caseInsensitiveSymbol "PATCH"
   UpdatePatch <$> object_
 
 updateValues :: Parser UpdateVal
 updateValues = label "updateValues" $ lexeme $ do
-  _ <- lexeme $ caseInsensitiveSymbol "SET"
+  _ <- caseInsensitiveSymbol "SET"
   fields <- sepBy parseField (lexeme $ char ',')
   return $ UpdateValues fields
   where
@@ -835,9 +829,9 @@ term = sc
               , WhereE <$> where_
               , appE
               , litE
-              , constE
               , edgeSelectorE
               , InParenE <$> betweenParens exp
+              , constE
               ])
 
 useNSDB :: Parser Statement

@@ -119,24 +119,23 @@ instance ToQL Param where
   toQL (Param t) = "$" <> t
 
 data Field
-  = SimpleField FieldName -- ^ name
+  = WildCardField
+  | SimpleField FieldName -- ^ name
   | IndexedField Field [Literal] -- ^ address[0]
   | FilteredField Field WHERE -- ^ (address WHERE city = "New York")
   | CompositeField Field Field -- ^ address.city
-  | FieldInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Field where
+  toQL WildCardField = "*"
   toQL (SimpleField t) = t
   toQL (IndexedField t is) = prepText $ [toQL t] <> concatMap (\i -> ["[", toQL i, "]"]) is
   toQL (FilteredField f w) = prepText ["(", toQL f, toQL w, ")"]
   toQL (CompositeField f1 f2) = foldl1 (<>) [toQL f1, ".", toQL f2]
-  toQL (FieldInput i) = toQL i
 
 instance HasInput Field where
   getInputs = \case
     FilteredField _ w -> getInputs w
-    FieldInput i -> [i]
     _ -> []
 
 data Edge
@@ -153,8 +152,7 @@ instance HasInput Edge where
   getInputs (InEdge f)  = getInputs f
 
 data Selector
-  = WildCardSelector
-  | FieldSelector Field
+  = FieldSelector Field
   | ExpSelector Exp Field
   | SelectorAs Selector Field
   | EdgeSelector (Maybe Field) [Edge] Field
@@ -165,7 +163,6 @@ data Selector
 
 instance ToQL Selector where
   toQL = \case
-    WildCardSelector -> "*"
     FieldSelector f -> prepText [toQL f]
     ExpSelector e f ->
       prepText [ toQL e, "AS", toQL f ]
@@ -177,7 +174,6 @@ instance ToQL Selector where
 
 instance HasInput Selector where
   getInputs = \case
-    WildCardSelector -> []
     FieldSelector f -> getInputs f
     ExpSelector e f -> getInputs e <> getInputs f
     SelectorAs s fAs -> getInputs s <> getInputs fAs
@@ -436,16 +432,10 @@ defaultDuration = Duration 0 0 0 0 0 0 0 0 0
 
 data TableName
   = TableName Text
-  | TableNameInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL TableName where
   toQL (TableName t)      = t
-  toQL (TableNameInput i) = toQL i
-
-instance HasInput TableName where
-  getInputs (TableNameInput i) = [i]
-  getInputs _                  = []
 
 newtype Object
   = Object [(Field, Exp)]
@@ -473,7 +463,7 @@ instance ToQL RecordID where
 
 instance HasInput RecordID where
   getInputs (RecordIDInput i) = [i]
-  getInputs (RecordID t i)    = getInputs t <> getInputs i
+  getInputs (RecordID _ i)    = getInputs i
 
 data RandFNName = RNUUID | RNRAND | RNULID
   deriving (Eq, Generic, Read, Show)
@@ -574,7 +564,7 @@ instance HasInput Literal where
     ArrayL es -> concatMap getInputs es
     RecordIDL i -> getInputs i
     FutureL e -> getInputs e
-    RecordIDRangeL t range -> getInputs t <> getInputs range
+    RecordIDRangeL _ range -> getInputs range
     LiteralInput i -> [i]
     _ -> []
 
@@ -642,7 +632,7 @@ instance ToQL Target where
 
 instance HasInput Target where
   getInputs = \case
-    TargetTable tn -> getInputs tn
+    TargetTable _ -> []
     TargetRecID rid -> getInputs rid
     TargetEdge rid es -> getInputs rid <> concatMap getInputs es
 
@@ -713,7 +703,7 @@ instance ToQL RelateTarget where
     = toQL rid1 <> "->" <> toQL tn <> "->" <> toQL rid2
 
 instance HasInput RelateTarget where
-  getInputs (RelateTarget rid1 tn rid2) = getInputs rid1 <> getInputs tn <> getInputs rid2
+  getInputs (RelateTarget rid1 _ rid2) = getInputs rid1 <> getInputs rid2
 
 data Exp
   = TypedE Exp TypeDef
@@ -839,8 +829,8 @@ instance HasInput Exp where
       <> maybe [] getInputs mLimit
       <> maybe [] getInputs mStart
       <> maybe [] getInputs mFetch
-    InsertE _ tableName insertVal
-      -> getInputs tableName <> getInputs insertVal
+    InsertE _ _ insertVal
+      -> getInputs insertVal
     CreateE _ target v _ _ _
       -> getInputs target <> getInputs v
     UpdateE _ target v mWhere _ _ _
