@@ -62,14 +62,6 @@ simpleType = do
 parseType :: Parser TypeDef
 parseType = lexeme $ maybeBetweenParens simpleType
 
--- | Input
-input :: Parser Input
-input = label "Input" $ lexeme $ maybeBetweenParens $ do
-  _ <- char '%'
-  i <- lexeme intParser
-  _ <- lexeme (symbol "::")
-  Input i <$> parseType
-
 -- | Literals
 
 noneL :: Parser Literal
@@ -148,8 +140,8 @@ durationParser = label "Duration" $ lexeme $ do
 durationL :: Parser Literal
 durationL = label "DurationL" $ lexeme $ DurationL <$> durationParser
 
-literalInput :: Parser Literal
-literalInput = label "LiteralInput" $ lexeme $ LiteralInput <$> input
+paramL :: Parser Literal
+paramL = label "literalParam" $ lexeme $ ParamL <$> param
 
 textID :: Parser ID
 textID = label "TextID" $ lexeme $ do
@@ -193,8 +185,8 @@ randomID = label "randomID" $ lexeme $ choice
   , caseInsensitiveSymbol "uuid()" $> RandomID RNUUID
   ]
 
-idInput :: Parser ID
-idInput = label "idInput" $ lexeme $ IDInput <$> input
+idParam :: Parser ID
+idParam = label "idParam" $ lexeme $ IDParam <$> param
 
 id_ :: Parser ID
 id_ = label "ID" $ choice $ map try
@@ -203,7 +195,7 @@ id_ = label "ID" $ choice $ map try
   , textID
   , objID
   , tupID
-  , idInput
+  , idParam
   ]
 
 normalRecordID :: Parser RecordID
@@ -212,13 +204,13 @@ normalRecordID = label "normalRecordID" $ lexeme $ do
   _ <- symbol ":"
   RecordID tn <$> id_
 
-recordIDInput :: Parser RecordID
-recordIDInput = label "recordIDInput" $ lexeme $ RecordIDInput <$> input
+recordIDParam :: Parser RecordID
+recordIDParam = label "recordIDParam" $ lexeme $ RecordIDParam <$> param
 
 recordID :: Parser RecordID
 recordID = label "RecordID" $ lexeme $ choice
   [ normalRecordID
-  , recordIDInput
+  , recordIDParam
   ]
 
 recordIDL :: Parser Literal
@@ -284,7 +276,7 @@ literal = lexeme $ maybeBetweenParens $ choice $ map try
   , objectL
   , arrayL
   , futureL
-  , literalInput
+  , paramL
   ]
 
 wildCardField :: Parser Field
@@ -315,14 +307,18 @@ fieldOperatorTable = [ [ E.Postfix indexedField
                        , E.InfixL (symbol "." $> CompositeField)
                        ] ]
 
+fieldParam :: Parser Field
+fieldParam = label "fieldParam" $ FieldParam <$> param
+
 field :: Parser Field
 field = E.makeExprParser fieldTerm fieldOperatorTable
 
 fieldTerm :: Parser Field
 fieldTerm = lexeme $ choice $ map try
-  [ filteredField
-  , wildCardField
+  [ fieldParam
+  , filteredField
   , simpleField
+  , wildCardField
   ]
 
 isValidIdentifierChar :: Char -> Bool
@@ -350,20 +346,23 @@ appE = label "AppE" $ lexeme $ do
 litE :: Parser Exp
 litE = label "LitE" $ lexeme $ LitE <$> literal
 
+-- | TODO: fix this
 constE :: Parser Exp
 constE = label "ConstE" $ lexeme $ ConstE <$> identifierWord
 
 param :: Parser Param
-param = label "Param" $ lexeme $ do
-  _ <- char '$'
-  Param <$> identifierWord
+param = label "Param" $ lexeme $ choice
+  [ do _ <- char '$'
+       SQLParam <$> identifierWord
+  , maybeBetweenParens $ do
+      _ <- char '%'
+      n <- identifierWord
+      _ <- lexeme $ symbol "::"
+      InputParam n <$> parseType
+  ]
 
 paramE :: Parser Exp
 paramE = label "ParamE" $ lexeme $ ParamE <$> param
-
-inputE :: Parser Exp
-inputE = label "InputE" $ lexeme $ do
-  InputE <$> input
 
 ifThenE :: Parser Exp
 ifThenE = label "IfThenE" $ lexeme $ do
@@ -503,13 +502,13 @@ orderType = label "OrderType" $ lexeme $ do
   caseInsensitiveSymbol "RAND" $> RAND
   <|> caseInsensitiveSymbol "COLLATE" $> COLLATE
   <|> caseInsensitiveSymbol "NUMERIC" $> NUMERIC
-  <|> OrderTypeInput <$> input
+  <|> OrderTypeParam <$> param
 
 orderDirection :: Parser OrderDirection
 orderDirection = label "OrderDirection" $ lexeme $ do
   caseInsensitiveSymbol "ASC" $> ASC
   <|> caseInsensitiveSymbol "DESC" $> DESC
-  <|> OrderDirectionInput <$> input
+  <|> OrderDirectionParam <$> param
 
 order :: Parser ORDER
 order = label "ORDER" $ lexeme $ do
@@ -523,13 +522,13 @@ limit :: Parser LIMIT
 limit = label "LIMIT" $ lexeme $ do
   _ <- caseInsensitiveSymbol "LIMIT"
   _ <- optional $ caseInsensitiveSymbol "BY"
-  LIMIT <$> intParser <|> LIMITInput <$> input
+  LIMIT <$> intParser <|> LIMITParam <$> param
 
 start :: Parser START
 start = label "START" $ lexeme $ do
   _ <- caseInsensitiveSymbol "START"
   _ <- optional $ caseInsensitiveSymbol "AT"
-  START <$> intParser <|> STARTInput <$> input
+  START <$> intParser <|> STARTParam <$> param
 
 fetch :: Parser FETCH
 fetch = label "FETCH" $ lexeme $ do
@@ -539,10 +538,7 @@ fetch = label "FETCH" $ lexeme $ do
 timeout :: Parser TIMEOUT
 timeout = label "TIMEOUT" $ lexeme $ do
   _ <- caseInsensitiveSymbol "TIMEOUT"
-  choice
-    [ TIMEOUT <$> durationParser
-    , TIMEOUTInput <$> input
-    ]
+  TIMEOUT <$> durationParser
 
 parallel :: Parser PARALLEL
 parallel = label "PARALLEL" $ caseInsensitiveSymbol "PARALLEL" $> PARALLEL
@@ -817,7 +813,6 @@ term :: Parser Exp
 term = sc
   >> lexeme (choice $ map try
               [ paramE
-              , inputE
               , ifThenE
               , ifThenElseE
               , selectE

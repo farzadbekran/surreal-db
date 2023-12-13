@@ -31,13 +31,13 @@ test = do
           [sql|
               select id :: Text, ->create->product AS cat :: (Vector TestRecType)
               from artist:00b2pg847d7b8r08t08t..
-              --where name = %1 :: Text && fname = %2 :: Int64
+              where name = %1 :: Text && fname = %2 :: Int64
               limit 2
               fetch cat;
-              --select 1 + 2 as ppp :: Int from artist limit 1;
+              select 1 + 2 as ppp :: Int from artist limit 1;
               |]
     putStr t
-    runQuery () q
+    runQuery ("n",1) q
   print res
 
 test2 :: IO ()
@@ -47,10 +47,13 @@ test2 = do
     let rid = RecordID (TableName "artist") (TextID "00b2pg847d7b8r08t08t")
     let q@(Query t _ _) =
           [sql|
-              (select *, ->create->product AS cat
-              from artist where id = %1 :: RecordID
+              (
+              select *, ->create->product AS cat
+              from artist
+              where id = %1 :: RecordID
               limit 2
-              fetch cat) :: (Vector TestRecType2);
+              fetch cat
+              ) :: (Vector TestRecType2);
               |]
     putStr t
     runQuery rid q
@@ -250,6 +253,8 @@ defineTest1 = do
               DEFINE INDEX my_index ON test FIELDS f1,f2 SEARCH ANALYZER my_analyzer BM25(0.1,0.2);
               DEFINE FIELD permissions.* ON TABLE acl TYPE string;
               (SELECT field1.* from test) :: Value;
+              (SELECT (%p :: Text).name from test) :: Value;
+              (update test set p.testField = 0) :: Value;
               |]
     putStr t
     runQuery () q

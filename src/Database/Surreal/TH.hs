@@ -23,7 +23,7 @@ import qualified Data.Text                       as T
 import qualified Data.Vector                     as V
 import           Database.Surreal.AST            ( HasInput (getInputs) )
 import qualified Database.Surreal.AST            as AST
-import           Database.Surreal.Parser         hiding ( input )
+import           Database.Surreal.Parser
 import           Database.Surreal.TypeHandler
 import           Database.Surreal.WS.RPC.Surreal as RPC
 import           Language.Haskell.TH
@@ -105,19 +105,23 @@ parseSQL s = do
   let blockAST = parse block "" s
   case blockAST of
     Right ast -> do
-      let inputs = sortBy (compare `on` (\(AST.Input i _) -> i)) $ getInputs ast
+      let inputs = getInputs ast
       [| Query $(lift $ AST.toQL ast) $(getInputEncoder inputs) $(getBlockResultDecoders ast) |]
     Left e    -> fail $ errorBundlePretty e
   where
-    getInputEncoder :: [AST.Input] -> Q Exp
+    getInputEncoder :: [AST.Param] -> Q Exp
     getInputEncoder inputs = lamE [getPatternBlock inputs] [| toJSON p |]
-    getPatternBlock :: [AST.Input] -> Q Pat
+    getPatternBlock :: [AST.Param] -> Q Pat
     getPatternBlock inputs = do
       asP (mkName "p") (getSignatures inputs)
-    getSignatures :: [AST.Input] -> Q Pat
-    getSignatures [AST.Input _ t] = sigP wildP (return $ mkType t)
+    getSignatures :: [AST.Param] -> Q Pat
+    getSignatures [AST.InputParam _ t] = sigP wildP (return $ mkType t)
     getSignatures [] = sigP wildP (tupleT 0)
-    getSignatures inputs = tupP $ P.map (\(AST.Input _ t) -> sigP wildP (return $ mkType t)) inputs
+    getSignatures inputs = tupP
+      $ P.map (\case
+                  (AST.InputParam _ t) -> sigP wildP (return $ mkType t)
+                  _ -> fail "parseSQL: unexpected param type, was expecting InputParam but got SQLParam!"
+              ) inputs
 
 
 applyInput :: input -> Query input output -> Surreal Text

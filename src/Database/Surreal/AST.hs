@@ -22,7 +22,7 @@ class ToQL a where
   toQL :: a -> Text
 
 class HasInput a where
-  getInputs :: a -> [Input]
+  getInputs :: a -> [Param]
 
 newtype FNName
   = FNName Text
@@ -111,12 +111,18 @@ data USE
   | USE_DB Database
   deriving (Eq, Generic, Read, Show)
 
-newtype Param
-  = Param Text
+data Param
+  = SQLParam Text
+  | InputParam Text TypeDef
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Param where
-  toQL (Param t) = "$" <> t
+  toQL (SQLParam t) = "$" <> t
+  toQL (InputParam t _) = "$" <> t
+
+instance HasInput Param where
+  getInputs (SQLParam _) = []
+  getInputs i = [i]
 
 data Field
   = WildCardField
@@ -124,6 +130,7 @@ data Field
   | IndexedField Field [Literal] -- ^ address[0]
   | FilteredField Field WHERE -- ^ (address WHERE city = "New York")
   | CompositeField Field Field -- ^ address.city
+  | FieldParam Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Field where
@@ -132,10 +139,12 @@ instance ToQL Field where
   toQL (IndexedField t is) = prepText $ [toQL t] <> concatMap (\i -> ["[", toQL i, "]"]) is
   toQL (FilteredField f w) = prepText ["(", toQL f, toQL w, ")"]
   toQL (CompositeField f1 f2) = foldl1 (<>) [toQL f1, ".", toQL f2]
+  toQL (FieldParam p) = toQL p
 
 instance HasInput Field where
   getInputs = \case
     FilteredField _ w -> getInputs w
+    FieldParam p -> getInputs p
     _ -> []
 
 data Edge
@@ -281,7 +290,7 @@ data OrderType
   = RAND
   | COLLATE
   | NUMERIC
-  | OrderTypeInput Input
+  | OrderTypeParam Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL OrderType where
@@ -289,26 +298,26 @@ instance ToQL OrderType where
     RAND -> "RAND"
     COLLATE -> "COLLATE"
     NUMERIC -> "NUMERIC"
-    OrderTypeInput i -> toQL i
+    OrderTypeParam p -> toQL p
 
 instance HasInput OrderType where
-  getInputs (OrderTypeInput i) = [i]
+  getInputs (OrderTypeParam p) = getInputs p
   getInputs _                  = []
 
 data OrderDirection
   = ASC
   | DESC
-  | OrderDirectionInput Input
+  | OrderDirectionParam Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL OrderDirection where
   toQL = \case
     ASC -> "ASC"
     DESC -> "DESC"
-    OrderDirectionInput i -> toQL i
+    OrderDirectionParam p -> toQL p
 
 instance HasInput OrderDirection where
-  getInputs (OrderDirectionInput i) = [i]
+  getInputs (OrderDirectionParam p) = getInputs p
   getInputs _                       = []
 
 newtype ORDER
@@ -332,28 +341,28 @@ instance HasInput ORDER where
 
 data LIMIT
   = LIMIT Int64
-  | LIMITInput Input
+  | LIMITParam Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL LIMIT where
   toQL (LIMIT i)      = "LIMIT " <> tshow i
-  toQL (LIMITInput i) = "LIMIT " <> toQL i
+  toQL (LIMITParam p) = "LIMIT " <> toQL p
 
 instance HasInput LIMIT where
-  getInputs (LIMITInput i) = [i]
+  getInputs (LIMITParam p) = getInputs p
   getInputs _              = []
 
 data START
   = START Int64
-  | STARTInput Input
+  | STARTParam Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL START where
   toQL (START i)      = "START " <> tshow i
-  toQL (STARTInput i) = "START " <> toQL i
+  toQL (STARTParam p) = "START " <> toQL p
 
 instance HasInput START where
-  getInputs (STARTInput i) = [i]
+  getInputs (STARTParam p) = getInputs p
   getInputs _              = []
 
 newtype FETCH
@@ -367,14 +376,12 @@ instance ToQL FETCH where
 instance HasInput FETCH where
   getInputs (FETCH fs) = concatMap getInputs fs
 
-data TIMEOUT
+newtype TIMEOUT
   = TIMEOUT Duration
-  | TIMEOUTInput Input
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL TIMEOUT where
   toQL (TIMEOUT d)      = "TIMEOUT " <> toQL d
-  toQL (TIMEOUTInput i) = "TIMEOUT " <> toQL i
 
 data PARALLEL = PARALLEL
   deriving (Eq, Generic, Read, Show)
@@ -454,15 +461,15 @@ instance HasInput Object where
 
 data RecordID
   = RecordID TableName ID
-  | RecordIDInput Input
+  | RecordIDParam Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL RecordID where
   toQL (RecordID t i)    = toQL t <> ":" <> toQL i
-  toQL (RecordIDInput i) = toQL i
+  toQL (RecordIDParam p) = toQL p
 
 instance HasInput RecordID where
-  getInputs (RecordIDInput i) = [i]
+  getInputs (RecordIDParam p) = getInputs p
   getInputs (RecordID _ i)    = getInputs i
 
 data RandFNName = RNUUID | RNRAND | RNULID
@@ -480,7 +487,7 @@ data ID
   | ObjID Object
   | TupID [Exp]
   | RandomID RandFNName
-  | IDInput Input
+  | IDParam Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL ID where
@@ -490,12 +497,12 @@ instance ToQL ID where
     ObjID o -> toQL o
     TupID es -> prepText $ ["["] <> intersperse "," (map toQL es) <> ["]"]
     RandomID fn -> toQL fn
-    IDInput i -> toQL i
+    IDParam p -> toQL p
 
 instance HasInput ID where
   getInputs (ObjID o)   = getInputs o
   getInputs (TupID es)  = concatMap getInputs es
-  getInputs (IDInput i) = [i]
+  getInputs (IDParam p) = getInputs p
   getInputs _           = []
 
 data IDRange
@@ -528,7 +535,7 @@ data Literal
   | RecordIDL RecordID
   | RecordIDRangeL TableName IDRange
   | FutureL Exp
-  | LiteralInput Input
+  | ParamL Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Literal where
@@ -552,7 +559,7 @@ instance ToQL Literal where
       <> frmt _us "us"
       <> frmt _ns "ns"
     RecordIDRangeL t range -> toQL t <> ":" <> toQL range
-    LiteralInput i -> toQL i
+    ParamL p -> toQL p
     ArrayL es -> "[" <> foldl1 (<>) (intersperse "," (map toQL es)) <> "]"
     ObjectL o -> toQL o
     RecordIDL i -> toQL i
@@ -565,15 +572,8 @@ instance HasInput Literal where
     RecordIDL i -> getInputs i
     FutureL e -> getInputs e
     RecordIDRangeL _ range -> getInputs range
-    LiteralInput i -> [i]
+    ParamL p -> getInputs p
     _ -> []
-
-data Input
-  = Input Int64 TypeDef
-  deriving (Eq, Generic, Read, Show)
-
-instance ToQL Input where
-  toQL (Input i _) = "%" <> tshow i
 
 data IGNORE = IGNORE
   deriving (Eq, Generic, Read, Show)
@@ -712,7 +712,6 @@ data Exp
   | LitE Literal
   | ConstE Text
   | ParamE Param
-  | InputE Input
   | IfThenE Exp Exp
   | IfThenElseE Exp Exp Exp
   | EdgeSelectorE (Maybe Field) [Edge]
@@ -733,8 +732,7 @@ instance ToQL Exp where
     AppE (FNName fnName) ps -> prepText $ [fnName <> "("] <> intersperse ", " (map toQL ps) <> [")"]
     LitE le -> toQL le
     ConstE t -> t
-    ParamE (Param p) -> "$" <> p
-    InputE i -> toQL i
+    ParamE p -> toQL p
     IfThenE e te -> prepText [ "IF", "(", toQL e, ")"
                              , "THEN", toQL te
                              , "END"]
@@ -813,8 +811,7 @@ instance HasInput Exp where
     OPE _ e1 e2 -> getInputs e1 <> getInputs e2
     AppE _ ps -> concatMap getInputs ps
     LitE le -> getInputs le
-    ParamE _ -> []
-    InputE i -> [i]
+    ParamE p -> getInputs p
     ConstE _ -> []
     IfThenE e te -> getInputs e <> getInputs te
     IfThenElseE e te fe -> getInputs e <> getInputs te <> getInputs fe

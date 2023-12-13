@@ -24,6 +24,9 @@ getFieldLabel = \case
   SimpleField t -> return t
   IndexedField f _ -> getFieldLabel f
   FilteredField f _ -> getFieldLabel f
+  FieldParam p -> case p of
+    SQLParam t -> return t
+    InputParam t _ -> return t
   CompositeField f1 f2 -> do
     l1 <- getFieldLabel f1
     l2 <- getFieldLabel f2
