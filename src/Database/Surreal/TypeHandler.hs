@@ -47,6 +47,10 @@ extractSelectorTypes (Selectors ss) = mapM (\s -> do
     getSelectorType :: MonadFail m => Selector -> m TypeDef
     getSelectorType = \case
       TypedSelector _ t -> return t
+      FieldSelector (FieldParam (InputParam _ t)) -> return t
+      ExpSelector _ (FieldParam (InputParam _ t)) -> return t
+      SelectorAs _ (FieldParam (InputParam _ t)) -> return t
+      SelectorAs s _ -> getSelectorType s
       a -> fail $ "No type definition given for: " <> show a
     getSelectorLabel :: MonadFail m => Selector -> m Text
     getSelectorLabel = \case

@@ -535,7 +535,9 @@ data Literal
   | RecordIDL RecordID
   | RecordIDRangeL TableName IDRange
   | FutureL Exp
+  | FieldL Field
   | ParamL Param
+  | RegexL Text
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Literal where
@@ -560,10 +562,12 @@ instance ToQL Literal where
       <> frmt _ns "ns"
     RecordIDRangeL t range -> toQL t <> ":" <> toQL range
     ParamL p -> toQL p
+    FieldL f -> toQL f
     ArrayL es -> "[" <> foldl1 (<>) (intersperse "," (map toQL es)) <> "]"
     ObjectL o -> toQL o
     RecordIDL i -> toQL i
     FutureL e -> "<future> {" <> toQL e <> "}"
+    RegexL r -> "/" <> r <> "/"
 
 instance HasInput Literal where
   getInputs = \case
@@ -573,6 +577,7 @@ instance HasInput Literal where
     FutureL e -> getInputs e
     RecordIDRangeL _ range -> getInputs range
     ParamL p -> getInputs p
+    FieldL f -> getInputs f
     _ -> []
 
 data IGNORE = IGNORE
@@ -711,7 +716,6 @@ data Exp
   | AppE FNName [Exp]
   | LitE Literal
   | ConstE Text
-  | ParamE Param
   | IfThenE Exp Exp
   | IfThenElseE Exp Exp Exp
   | EdgeSelectorE (Maybe Field) [Edge]
@@ -732,7 +736,6 @@ instance ToQL Exp where
     AppE (FNName fnName) ps -> prepText $ [fnName <> "("] <> intersperse ", " (map toQL ps) <> [")"]
     LitE le -> toQL le
     ConstE t -> t
-    ParamE p -> toQL p
     IfThenE e te -> prepText [ "IF", "(", toQL e, ")"
                              , "THEN", toQL te
                              , "END"]
@@ -811,7 +814,6 @@ instance HasInput Exp where
     OPE _ e1 e2 -> getInputs e1 <> getInputs e2
     AppE _ ps -> concatMap getInputs ps
     LitE le -> getInputs le
-    ParamE p -> getInputs p
     ConstE _ -> []
     IfThenE e te -> getInputs e <> getInputs te
     IfThenElseE e te fe -> getInputs e <> getInputs te <> getInputs fe

@@ -253,9 +253,9 @@ defineTest1 = do
               DEFINE INDEX my_index ON test FIELDS f1,f2 SEARCH ANALYZER my_analyzer BM25(0.1,0.2);
               DEFINE FIELD permissions.* ON TABLE acl TYPE string;
               (SELECT field1.* from test) :: Value;
-              (SELECT (%p :: Text).name from test) :: Value;
-              (update test set p.testField = 0) :: Value;
+              SELECT %p :: Text from test where $param.field[1] = 1;
+              (create test_table_2 set p.testField = /[A-Z]/) :: Value;
               |]
     putStr t
-    runQuery () q
+    runQuery "my val" q
   print res

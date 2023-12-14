@@ -205,7 +205,10 @@ normalRecordID = label "normalRecordID" $ lexeme $ do
   RecordID tn <$> id_
 
 recordIDParam :: Parser RecordID
-recordIDParam = label "recordIDParam" $ lexeme $ RecordIDParam <$> param
+recordIDParam = label "recordIDParam" $ lexeme $ do
+  p <- param
+  lookAhead space1 -- need to make sure we are not parsing a $p.somefield by mistake
+  return $ RecordIDParam p
 
 recordID :: Parser RecordID
 recordID = label "RecordID" $ lexeme $ choice
@@ -260,6 +263,13 @@ futureL = label "futureL" $ lexeme $ do
   e <- between (char '{') (char '}') exp
   return $ FutureL e
 
+regexL :: Parser Literal
+regexL = label "regexL" $ lexeme $ RegexL . pack <$>
+  (char '/' *> manyTill L.charLiteral (char '/'))
+
+fieldL :: Parser Literal
+fieldL = label "fieldL" $ lexeme $ FieldL <$> field
+
 -- | TODO: add missing types like location/coordinates
 literal :: Parser Literal
 literal = lexeme $ maybeBetweenParens $ choice $ map try
@@ -271,12 +281,14 @@ literal = lexeme $ maybeBetweenParens $ choice $ map try
   , floatL
   , textL
   , int64L
+  , regexL
   , recordIDRangeL
   , recordIDL
+  , fieldL
+  , paramL
   , objectL
   , arrayL
   , futureL
-  , paramL
   ]
 
 wildCardField :: Parser Field
@@ -299,7 +311,7 @@ indexedField = label "IndexedField" $ lexeme $ do
 
 filteredField :: Parser Field
 filteredField = label "FilteredField" $ lexeme $ betweenParens $ do
-  f <- simpleField
+  f <- field
   FilteredField f <$> where_
 
 fieldOperatorTable :: [[E.Operator Parser Field]]
@@ -360,9 +372,6 @@ param = label "Param" $ lexeme $ choice
       _ <- lexeme $ symbol "::"
       InputParam n <$> parseType
   ]
-
-paramE :: Parser Exp
-paramE = label "ParamE" $ lexeme $ ParamE <$> param
 
 ifThenE :: Parser Exp
 ifThenE = label "IfThenE" $ lexeme $ do
@@ -812,8 +821,7 @@ exp = E.makeExprParser term operatorTable
 term :: Parser Exp
 term = sc
   >> lexeme (choice $ map try
-              [ paramE
-              , ifThenE
+              [ ifThenE
               , ifThenElseE
               , selectE
               , insertE
@@ -823,8 +831,8 @@ term = sc
               , deleteE
               , WhereE <$> where_
               , appE
-              , litE
               , edgeSelectorE
+              , litE
               , InParenE <$> betweenParens exp
               , constE
               ])
