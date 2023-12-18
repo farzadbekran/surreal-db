@@ -767,6 +767,11 @@ edgeSelectorE = label "selectorE" $ lexeme $ do
     then fail "Invalid Edge!"
     else return $ EdgeSelectorE mInitialField edges
 
+returnE :: Parser Exp
+returnE = label "returnE" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "RETURN"
+  ReturnE <$> exp
+
 -- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
 operatorTable = [ [ E.Postfix typedExp
@@ -829,6 +834,7 @@ term = sc
               , updateE
               , relateE
               , deleteE
+              , returnE
               , WhereE <$> where_
               , appE
               , edgeSelectorE

@@ -107,6 +107,7 @@ getSelectBaseType = \case
 getBaseType :: MonadFail m => Exp -> m [(Maybe Text, TypeDef)]
 getBaseType = \case
   TypedE _ t -> return [(Nothing, t)]
+  ReturnE e -> getBaseType e
   se@(SelectE {}) -> getSelectBaseType se
   ie@(InsertE {}) -> fail $ "getBaseType: Insert Expressions must have a type: " <> show ie
   a -> fail $ "getBaseType: undefined: " <> show a

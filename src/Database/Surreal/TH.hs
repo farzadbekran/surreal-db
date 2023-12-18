@@ -66,6 +66,11 @@ getExpResultDecoder e = do
              Aeson.Success r2 -> return r2
              Aeson.Error err  -> P.throwIO $ DecodeError err)
        |]
+    AST.ReturnE {} -> do
+      [| (\r -> case fromJSON @($(return t)) r of
+             Aeson.Success r2 -> return r2
+             Aeson.Error err  -> P.throwIO $ DecodeError err)
+       |]
     _ -> fail "unimplemented decoder!"
 
 -- TODO: add support for return statement

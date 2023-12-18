@@ -275,3 +275,15 @@ inputTest = do
     putStr t
     runQuery (#fn .== "Lasonya") q
   print res
+
+returnTest :: IO ()
+returnTest = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q@(Query t _ _) =
+          [sql|
+              return 123 :: Int64;
+              |]
+    putStr t
+    runQuery (#fn .== "Lasonya") q
+  print res

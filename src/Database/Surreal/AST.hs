@@ -725,7 +725,8 @@ data Exp
   | DeleteE (Maybe ONLY) Target (Maybe WHERE) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
   | UpdateE (Maybe ONLY) Target UpdateVal (Maybe WHERE) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
   | RelateE (Maybe ONLY) RelateTarget (Maybe UpdateVal) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
-  | WhereE WHERE -- ^ needed this to support table permissions support
+  | WhereE WHERE -- ^ needed this to support table permissions
+  | ReturnE Exp
   | InParenE Exp
   deriving (Eq, Generic, Read, Show)
 
@@ -806,6 +807,7 @@ instance ToQL Exp where
                , renderIfJust mParallel
                ]
     WhereE w -> toQL w
+    ReturnE e -> "RETURN " <> toQL e
     InParenE e -> "(" <> toQL e <> ")"
 
 instance HasInput Exp where
@@ -839,6 +841,7 @@ instance HasInput Exp where
     DeleteE _ target mWhere _ _ _
       -> getInputs target <> maybe [] getInputs mWhere
     WhereE w -> getInputs w
+    ReturnE e -> getInputs e
     InParenE e -> getInputs e
 
 data UserScope = USROOT | USNS | USDB
