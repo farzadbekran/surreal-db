@@ -60,23 +60,31 @@ getExpResultDecoder e = do
   case e of
     AST.SelectE {} -> do
       [| (\case
-             (Object r) -> case r !? "result" of
-                             Just r1 -> do
-                               case fromJSON @[Rec $(return t)] r1 of
-                                 Aeson.Success r2 -> return r2
-                                 Aeson.Error err  -> P.throwIO $ DecodeError err
-                             Nothing -> P.throwIO $ DecodeError "Select Decoder: missing 'result' key in object!"
+             (Object r) -> do
+               case r !? "status" of
+                 Just (String "OK") -> return ()
+                 s -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected status: " <> show s
+               case r !? "result" of
+                 Just r1 -> do
+                   case fromJSON @[Rec $(return t)] r1 of
+                     Aeson.Success r2 -> return r2
+                     Aeson.Error err  -> P.throwIO $ DecodeError err
+                 Nothing -> P.throwIO $ DecodeError "Select Decoder: missing 'result' key in object!"
              v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: " <> show v)
        |]
     AST.TypedE {} -> do
       [| (\case
-             (Object r) -> case r !? "result" of
-                             Just r1 -> do
-                               case fromJSON @($(return t)) r1 of
-                                 Aeson.Success r2 -> return r2
-                                 Aeson.Error err  -> P.throwIO $ DecodeError err
-                             Nothing -> P.throwIO $ DecodeError "Select Decoder: missing 'result' key in object!"
-             v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: " <> show v)
+             (Object r) -> do
+               case r !? "status" of
+                 Just (String "OK") -> return ()
+                 s -> P.throwIO $ DecodeError $ "TypedE Decoder: Unexpected status: " <> show s
+               case r !? "result" of
+                 Just r1 -> do
+                   case fromJSON @($(return t)) r1 of
+                     Aeson.Success r2 -> return r2
+                     Aeson.Error err  -> P.throwIO $ DecodeError err
+                 Nothing -> P.throwIO $ DecodeError "Select Decoder: missing 'result' key in object!"
+             v -> P.throwIO $ DecodeError $ "TypedE Decoder: Unexpected result format: " <> show v)
        |]
     _ -> fail "unimplemented decoder!"
 
@@ -84,7 +92,12 @@ getExpResultDecoder e = do
 getLineResultDecoder :: AST.SurQLLine -> Q Exp
 getLineResultDecoder = \case
   AST.ExpLine e -> getExpResultDecoder e
-  AST.StatementLine _ -> [| (\_ -> return ()) |]
+  AST.StatementLine _ -> [| (\r -> do
+                               case r !? "status" of
+                                 Just (String "OK") -> return ()
+                                 s -> P.throwIO $ DecodeError $ "StatementLine Decoder: Unexpected status: " <> show s
+                               return ())
+                          |]
 
 -- | we only care about the type of the last line, and decode that
 getBlockResultDecoders :: AST.Block -> Q Exp
