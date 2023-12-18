@@ -262,8 +262,8 @@ defineTest1 = do
     runQuery (#p .== "my val") q
   print res
 
-inptTest :: IO ()
-inptTest = do
+inputTest :: IO ()
+inputTest = do
   connState <- RPC.connect RPC.defaultConnectionInfo
   res <- RPC.runSurreal connState $ do
     let q@(Query t _ _) =

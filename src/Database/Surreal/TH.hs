@@ -16,10 +16,8 @@ module Database.Surreal.TH where
 import           ClassyPrelude                   as P hiding ( exp, lift )
 import           Control.Monad.Fail
 import           Data.Aeson                      as Aeson
-import           Data.Aeson.Text                 ( encodeToLazyText )
-import           Data.Foldable                   hiding ( concatMap )
+import           Data.Aeson.KeyMap
 import           Data.Row.Records
-import qualified Data.Text                       as T
 import qualified Data.Vector                     as V
 import           Database.Surreal.AST            ( HasInput (getInputs) )
 import qualified Database.Surreal.AST            as AST
@@ -59,32 +57,14 @@ getExpResultDecoder e = do
   t <- getExpressionType e
   case e of
     AST.SelectE {} -> do
-      [| (\case
-             (Object r) -> do
-               case r !? "status" of
-                 Just (String "OK") -> return ()
-                 s -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected status: " <> show s
-               case r !? "result" of
-                 Just r1 -> do
-                   case fromJSON @[Rec $(return t)] r1 of
-                     Aeson.Success r2 -> return r2
-                     Aeson.Error err  -> P.throwIO $ DecodeError err
-                 Nothing -> P.throwIO $ DecodeError "Select Decoder: missing 'result' key in object!"
-             v -> P.throwIO $ DecodeError $ "Select Decoder: Unexpected result format: " <> show v)
+      [| (\r -> case fromJSON @[Rec $(return t)] r of
+             Aeson.Success r2 -> return r2
+             Aeson.Error err  -> P.throwIO $ DecodeError err)
        |]
     AST.TypedE {} -> do
-      [| (\case
-             (Object r) -> do
-               case r !? "status" of
-                 Just (String "OK") -> return ()
-                 s -> P.throwIO $ DecodeError $ "TypedE Decoder: Unexpected status: " <> show s
-               case r !? "result" of
-                 Just r1 -> do
-                   case fromJSON @($(return t)) r1 of
-                     Aeson.Success r2 -> return r2
-                     Aeson.Error err  -> P.throwIO $ DecodeError err
-                 Nothing -> P.throwIO $ DecodeError "Select Decoder: missing 'result' key in object!"
-             v -> P.throwIO $ DecodeError $ "TypedE Decoder: Unexpected result format: " <> show v)
+      [| (\r -> case fromJSON @($(return t)) r of
+             Aeson.Success r2 -> return r2
+             Aeson.Error err  -> P.throwIO $ DecodeError err)
        |]
     _ -> fail "unimplemented decoder!"
 
@@ -92,25 +72,14 @@ getExpResultDecoder e = do
 getLineResultDecoder :: AST.SurQLLine -> Q Exp
 getLineResultDecoder = \case
   AST.ExpLine e -> getExpResultDecoder e
-  AST.StatementLine _ -> [| (\r -> do
-                               case r !? "status" of
-                                 Just (String "OK") -> return ()
-                                 s -> P.throwIO $ DecodeError $ "StatementLine Decoder: Unexpected status: " <> show s
-                               return ())
-                          |]
+  AST.StatementLine _ -> [| (\_ -> return ()) |]
 
 -- | we only care about the type of the last line, and decode that
 getBlockResultDecoders :: AST.Block -> Q Exp
 getBlockResultDecoders (AST.Block ls) = do
   decoders <- mapM getLineResultDecoder ls
   case lastMay decoders of
-    Just decoder ->
-      [| (\case
-           Array a -> $(return decoder) (V.last a)
-           v -> P.throwIO $ DecodeError
-             $ "Base Decoder: Unexpected result format: expecting array but got: "
-             <> pack (show v)
-         ) |]
+    Just decoder -> [| $(return decoder) |]
     Nothing -> fail $ "No decoder for the last line in the SQL Block: " <> show ls
 
 parseSQL :: String -> Q Exp
@@ -133,4 +102,22 @@ runQuery input (Query q encoder decoder) = do
   print r
   case err of
     Just e  -> P.throwIO e
-    Nothing -> decoder $ fromMaybe Null result
+    Nothing -> case result of
+      Just (Array arr) -> do
+        results <- mapM checkForErrorsAndExtractResults arr
+        decoder (V.last results)
+      v -> P.throwIO $ DecodeError
+        $ "runQuery: Unexpected result format: expecting array but got: "
+        <> pack (show v)
+  where
+    checkForErrorsAndExtractResults :: Value -> Surreal Value
+    checkForErrorsAndExtractResults (Object o) = case o !? "status" of
+      Just (String "OK") -> case o !? "result" of
+        Just r -> return r
+        Nothing -> P.throwIO $ DecodeError
+          $ "runQuery: missing 'result' key in result map: " <> show o
+      s -> P.throwIO $ DecodeError
+        $ "runQuery: Unexpected status: " <> show s
+    checkForErrorsAndExtractResults v = P.throwIO $ DecodeError
+      $ "runQuery: Unexpected result format: expecting object but got: "
+      <> pack (show v)

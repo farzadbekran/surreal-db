@@ -1147,9 +1147,9 @@ data Statement
 instance ToQL Statement where
   toQL = \case
     UseS u -> case u of
-      USE ns db -> "USE NS" <> ns <> " DB" <> db
-      USE_NS ns -> "USE NS" <> ns
-      USE_DB db -> "USE DB" <> db
+      USE ns db -> "USE NS " <> ns <> " DB " <> db
+      USE_NS ns -> "USE NS " <> ns
+      USE_DB db -> "USE DB " <> db
     LetS p e -> "LET " <> toQL p <> " = " <> toQL e
     BeginS -> "BEGIN"
     CancelS -> "CANCEL"
