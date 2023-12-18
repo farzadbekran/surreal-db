@@ -872,7 +872,9 @@ useS = label "useS" $ lexeme $ choice $ map try
 
 letS :: Parser Statement
 letS = label "letS" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "LET"
   p <- param
+  _ <- symbol "="
   LetS p <$> exp
 
 forS :: Parser Statement
@@ -1143,9 +1145,15 @@ statement =
   sc >> lexeme (choice $ map try
                 [ useS
                 , letS
-                , caseInsensitiveSymbol "BEGIN" $> BeginS
-                , caseInsensitiveSymbol "CANCEL" $> CancelS
-                , caseInsensitiveSymbol "COMMIT" $> CommitS
+                , caseInsensitiveSymbol "BEGIN"
+                  >> optional (caseInsensitiveSymbol "TRANSACTION")
+                  $> BeginS
+                , caseInsensitiveSymbol "CANCEL"
+                  >> optional (caseInsensitiveSymbol "TRANSACTION")
+                  $> CancelS
+                , caseInsensitiveSymbol "COMMIT"
+                  >> optional (caseInsensitiveSymbol "TRANSACTION")
+                  $> CommitS
                 , caseInsensitiveSymbol "BREAK" $> BreakS
                 , caseInsensitiveSymbol "CONTINUNE" $> ContinueS
                 , forS

@@ -287,3 +287,32 @@ returnTest = do
     putStr t
     runQuery (#fn .== "Lasonya") q
   print res
+
+exceptionTest :: IO ()
+exceptionTest = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q@(Query t _ _) =
+          [sql|
+              return 123 :: Int64;
+              |]
+    putStr t
+    runQuery (#fn .== "Lasonya") q
+  print res
+
+txTest :: IO ()
+txTest = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q =
+          [sql|
+              begin;
+              INSERT INTO test { name : "tx-farzad", fname : "tx-bekran" } :: Vector Value;
+              LET $res = select id from test limit 1;
+              commit;
+              return $res :: Value;
+              |]
+    -- _ <- runQuery () q
+    -- runQuery () [sql| commit; |]
+    runQuery () q
+  print res

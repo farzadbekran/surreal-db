@@ -110,7 +110,7 @@ runQuery input (Query q encoder decoder) = do
     Nothing -> case result of
       Just (Array arr) -> do
         results <- mapM checkForErrorsAndExtractResults arr
-        decoder (V.last results)
+        decoder $ fromMaybe Null (lastMay results)
       v -> P.throwIO $ DecodeError
         $ "runQuery: Unexpected result format: expecting array but got: "
         <> pack (show v)

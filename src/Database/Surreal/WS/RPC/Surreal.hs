@@ -3,6 +3,9 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Database.Surreal.WS.RPC.Surreal where
 
@@ -114,9 +117,12 @@ connect ConnectionInfo { .. } = do
             , "pass" .= pass
             , "ns" .= ns
             , "db" .= db]]
-  if isNothing (error signinRes)
-    then return connectionState
-    else throw $ SigninError (error signinRes)
+  case signinRes of
+    Right Response { error } ->
+      if isNothing error
+        then return connectionState
+        else throw $ SigninError error
+    Left e -> throw e
 
 getNextRequestID :: Surreal Int
 getNextRequestID = do
@@ -145,5 +151,5 @@ send method params = do
     Right r -> return r
     Left e  -> throw e
 
-runSurreal :: MonadIO m => ConnectionState -> Surreal a -> m a
-runSurreal cs surr = liftIO $ runReaderT surr cs
+runSurreal :: (MonadIO m) => ConnectionState -> Surreal a -> m (Either SomeException a)
+runSurreal cs surr = liftIO $ try $ runReaderT surr cs
