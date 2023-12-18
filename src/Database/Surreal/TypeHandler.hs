@@ -130,12 +130,26 @@ getRowType = \case
       $ TH.InfixT (TH.LitT (TH.StrTyLit $ unpack l)) ''(.==) t'
   a -> fail $ "getRowType: Can't make a row type without a label: " <> show a
 
+-- | returns a row type like `"name" .== Text`
+getRowTypeFromInput :: MonadFail m => Param -> m TH.Type
+getRowTypeFromInput = \case
+  InputParam l t -> do
+    let t' = mkType t
+    return
+      $ TH.InfixT (TH.LitT (TH.StrTyLit $ unpack l)) ''(.==) t'
+  a -> fail $ "getRowTypeFromInput: Can't make a row type without a label: " <> show a
+
 combineToRowType :: TH.Type -> TH.Type -> TH.Type
 combineToRowType t1 t2 = TH.InfixT t2 ''(.+) t1
 
 mkRecType :: MonadFail m => [(Maybe Text, TypeDef)] -> m TH.Type
 mkRecType types = do
   rTypes <- mapM getRowType types
+  return $ foldr1 combineToRowType rTypes
+
+mkRecTypeFromInputs :: MonadFail m => [Param] -> m TH.Type
+mkRecTypeFromInputs params = do
+  rTypes <- mapM getRowTypeFromInput params
   return $ foldr1 combineToRowType rTypes
 
 getExpressionType :: MonadFail m => Exp -> m TH.Type

@@ -110,33 +110,13 @@ parseSQL s = do
     Left e    -> fail $ errorBundlePretty e
   where
     getInputEncoder :: [AST.Param] -> Q Exp
-    getInputEncoder inputs = lamE [getPatternBlock inputs] [| toJSON p |]
-    getPatternBlock :: [AST.Param] -> Q Pat
-    getPatternBlock inputs = do
-      asP (mkName "p") (getSignatures inputs)
-    getSignatures :: [AST.Param] -> Q Pat
-    getSignatures [AST.InputParam _ t] = sigP wildP (return $ mkType t)
-    getSignatures [] = sigP wildP (tupleT 0)
-    getSignatures inputs = tupP
-      $ P.map (\case
-                  (AST.InputParam _ t) -> sigP wildP (return $ mkType t)
-                  _ -> fail "parseSQL: unexpected param type, was expecting InputParam but got SQLParam!"
-              ) inputs
-
-
-applyInput :: input -> Query input output -> Surreal Text
-applyInput input (Query q encoder _) = do
-  let encodedInput = encoder input
-  case encodedInput of
-    Array is -> do
-      let encodedVals = P.map (\(i :: Int64,v) -> (i, toStrict $ encodeToLazyText v)) (P.zip [1..] $ P.toList is)
-      return $ foldl (\r (i,t) -> T.replace ("%" <> tshow i) t r) q encodedVals
-    i        -> return $ T.replace "%1" (toStrict $ encodeToLazyText i) q
+    getInputEncoder [] = [| (\_ -> object [] ) |]
+    getInputEncoder inputs = [| toJSON :: Rec $(mkRecTypeFromInputs inputs) -> Value |]
 
 runQuery :: input -> Query input output -> Surreal output
-runQuery input query@(Query _ _ decoder) = do
-  q <- applyInput input query
-  r@RPC.Response { RPC.result = result, RPC.error = err } <- RPC.send "query" [String q]
+runQuery input (Query q encoder decoder) = do
+  let encodedInput = encoder input
+  r@RPC.Response { RPC.result = result, RPC.error = err } <- RPC.send "query" [String q, encodedInput]
   print r
   case err of
     Just e  -> P.throwIO e

@@ -1,5 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedLabels    #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE QuasiQuotes         #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -31,13 +33,13 @@ test = do
           [sql|
               select id :: Text, ->create->product AS cat :: (Vector TestRecType)
               from artist:00b2pg847d7b8r08t08t..
-              where name = %1 :: Text && fname = %2 :: Int64
+              where name = %name :: Text && fname = %fname :: Int64
               limit 2
               fetch cat;
               select 1 + 2 as ppp :: Int from artist limit 1;
               |]
     putStr t
-    runQuery ("n",1) q
+    runQuery (#name .== "my-name" .+ #fname .== 123) q
   print res
 
 test2 :: IO ()
@@ -50,13 +52,13 @@ test2 = do
               (
               select *, ->create->product AS cat
               from artist
-              where id = %1 :: RecordID
+              where id = %id :: RecordID
               limit 2
               fetch cat
               ) :: (Vector TestRecType2);
               |]
     putStr t
-    runQuery rid q
+    runQuery (#id .== rid) q
   print res
 
 insertTest :: IO ()
@@ -65,11 +67,11 @@ insertTest = do
   res <- RPC.runSurreal connState $ do
     let q@(Query t _ _) =
           [sql|
-              (INSERT INTO test (id, name, fname) VALUES (test:uuid(), %1 :: Text, %2 :: Text), ("test:farzad2", "farzad2", "bekran2")
+              (INSERT INTO test (id, name, fname) VALUES (test:uuid(), %v1 :: Text, %v2 :: Text), ("test:farzad2", "farzad2", "bekran2")
                 ON DUPLICATE KEY UPDATE numUpdate += 1) :: Vector TestRecType3;
               |]
     putStr t
-    runQuery ("inputval1","inputval \" 2") q
+    runQuery (#v1 .== "inputval1" .+ #v2 .== "inputval \" 2") q
   print res
 
 insertTest2 :: IO ()
@@ -152,10 +154,10 @@ deleteTest2 = do
     print rid
     let q@(Query t _ _) =
           [sql|
-              (DELETE test where id = %1 :: RecordID) :: ();
+              (DELETE test where id = %id :: RecordID) :: ();
               |]
     putStr t
-    runQuery rid q
+    runQuery (#id .== rid) q
   print res
 
 updateTest1 :: IO ()
@@ -166,10 +168,10 @@ updateTest1 = do
     print rid
     let q@(Query t _ _) =
           [sql|
-              (UPDATE test SET name = "updated Name" where id = (%1 :: RecordID) RETURN NONE) :: ();
+              (UPDATE test SET name = "updated Name" where id = (%id :: RecordID) RETURN NONE) :: ();
               |]
     putStr t
-    runQuery rid q
+    runQuery (#id .== rid) q
   print res
 
 updateTest2 :: IO ()
@@ -257,5 +259,19 @@ defineTest1 = do
               (create test_table_2 set p.testField = /[A-Z]/) :: Value;
               |]
     putStr t
-    runQuery "my val" q
+    runQuery (#p .== "my val") q
+  print res
+
+inptTest :: IO ()
+inptTest = do
+  connState <- RPC.connect RPC.defaultConnectionInfo
+  res <- RPC.runSurreal connState $ do
+    let q@(Query t _ _) =
+          [sql|
+              select id :: RecordID, first_name :: Text, last_name :: Text
+              from artist
+              where first_name = %fn :: Text;
+              |]
+    putStr t
+    runQuery (#fn .== "Lasonya") q
   print res
