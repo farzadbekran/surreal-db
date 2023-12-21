@@ -13,32 +13,33 @@
 module Database.Surreal.ManualTest where
 
 import           ClassyPrelude                   as P
-import           Data.Aeson
 import           Data.Row
 import           Data.Row.Aeson                  ()
 import           Database.Surreal.Core
-import           Database.Surreal.WS.RPC.Surreal
+import           Database.Surreal.WS.RPC
+
+data MyAppState = MyAppState { surrealState :: RPCConnectionState
+                             , someOtherState :: Text
+                             }
 
 newtype MyApp a
-  = MyApp (ReaderT ConnectionState IO a)
-  deriving (Applicative, Functor, Monad, MonadIO, MonadReader ConnectionState)
+  = MyApp (ReaderT MyAppState IO a)
+  deriving (Applicative, Functor, Monad, MonadIO, MonadUnliftIO, MonadReader MyAppState)
 
 instance MonadSurreal MyApp where
-  getNextRequestID :: MyApp Int
   getNextRequestID = do
-    cs <- ask
-    liftIO $ runReaderT getNextRequestIDIO cs
-  send :: Text -> [Value] -> MyApp Response
+    cs <- asks surrealState
+    runReaderT getNextRequestIDRPC cs
   send t vs = do
-    cs <- ask
-    liftIO $ runReaderT (sendIO t vs) cs
-  runQuery :: input -> Query input (MyApp output) -> MyApp output
-  runQuery = runQueryIO
+    cs <- asks surrealState
+    runReaderT (sendRPC t vs) cs
+  runQuery = runQueryRPC
 
 runMyApp :: MyApp a -> IO a
 runMyApp (MyApp m) = do
-  cs <- connectIO defaultConnectionInfo
-  runReaderT m cs
+  cs <- connectRPC defaultConnectionInfo
+  let appState = MyAppState cs "some other state"
+  runReaderT m appState
 
 type TestRecType = Rec ("category" .== Text)
 type TestRecType2 = Rec ("id" .== RecordID .+ "cat" .== Vector TestRecType)

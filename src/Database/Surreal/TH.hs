@@ -13,21 +13,19 @@
 
 module Database.Surreal.TH where
 
-import           ClassyPrelude                   as P hiding ( exp, lift )
+import           ClassyPrelude                as P hiding ( exp, lift )
 import           Control.Monad.Fail
-import           Data.Aeson                      as Aeson
-import           Data.Aeson.KeyMap
+import           Data.Aeson                   as Aeson
 import           Data.Row.Records
-import           Database.Surreal.AST            ( HasInput (getInputs) )
-import qualified Database.Surreal.AST            as AST
+import           Database.Surreal.AST         ( HasInput (getInputs) )
+import qualified Database.Surreal.AST         as AST
 import           Database.Surreal.Parser
 import           Database.Surreal.TypeHandler
 import           Database.Surreal.Types
-import           Database.Surreal.WS.RPC.Surreal as RPC
 import           Language.Haskell.TH
 import           Language.Haskell.TH.Quote
 import           Language.Haskell.TH.Syntax
-import           Text.Megaparsec                 hiding ( Label )
+import           Text.Megaparsec              hiding ( Label )
 
 -- reEncode :: (i2 -> i) -> Query i o -> Query i2 o
 -- reEncode f (Query t ie od)  = Query t (ie . f) od
@@ -91,30 +89,3 @@ parseSQL s = do
     getInputEncoder :: [AST.Param] -> Q Exp
     getInputEncoder [] = [| (\_ -> object [] ) |]
     getInputEncoder inputs = [| toJSON :: Rec $(mkRecTypeFromInputs inputs) -> Value |]
-
--- runQuery :: input -> Query input output -> Surreal output
--- runQuery input (Query q encoder decoder) = do
---   let encodedInput = encoder input
---   r@Response { result = result, error = err } <- RPC.send "query" [String q, encodedInput]
---   print r
---   case err of
---     Just e  -> P.throwIO e
---     Nothing -> case result of
---       Just (Array arr) -> do
---         results <- mapM checkForErrorsAndExtractResults arr
---         decoder $ fromMaybe Null (lastMay results)
---       v -> P.throwIO $ DecodeError
---         $ "runQuery: Unexpected result format: expecting array but got: "
---         <> pack (show v)
---   where
---     checkForErrorsAndExtractResults :: Value -> Surreal Value
---     checkForErrorsAndExtractResults (Object o) = case o !? "status" of
---       Just (String "OK") -> case o !? "result" of
---         Just r -> return r
---         Nothing -> P.throwIO $ DecodeError
---           $ "runQuery: missing 'result' key in result map: " <> show o
---       s -> P.throwIO $ DecodeError
---         $ "runQuery: Unexpected status: " <> show s
---     checkForErrorsAndExtractResults v = P.throwIO $ DecodeError
---       $ "runQuery: Unexpected result format: expecting object but got: "
---       <> pack (show v)

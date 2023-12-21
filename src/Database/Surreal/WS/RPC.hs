@@ -7,7 +7,7 @@
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 
-module Database.Surreal.WS.RPC.Surreal where
+module Database.Surreal.WS.RPC where
 
 import           ClassyPrelude          hiding ( error, id )
 import           Control.Concurrent     ( ThreadId, forkIO, myThreadId,
@@ -22,12 +22,27 @@ import           Database.Surreal.Types
 import           Network.Socket         ( withSocketsDo )
 import qualified Network.WebSockets     as WS
 
+data RPCConnectionState
+  = RPCConnectionState
+      { conn           :: WS.Connection
+      , nextReqID      :: TVar Int
+      , respMap        :: TVar (Map Int (MVar Response))
+      , listenerThread :: ThreadId
+      }
+
+data RPCNetworkException
+  = NotConnected
+  | InvalidResponse Text
+  | RequestTimeout Request
+  | SigninError (Maybe SurrealError)
+  deriving (Exception, Show)
+
 {- |
 listens to the connection and writes responses to the
 response map.
 -}
-app :: MVar WS.Connection -> MVar ThreadId -> TVar (Map Int (MVar Response)) -> WS.ClientApp ()
-app connMvar threadIDMvar respMap connection = do
+rpcApp :: MVar WS.Connection -> MVar ThreadId -> TVar (Map Int (MVar Response)) -> WS.ClientApp ()
+rpcApp connMvar threadIDMvar respMap connection = do
   putMVar connMvar connection
   tid <- myThreadId
   putMVar threadIDMvar tid
@@ -42,17 +57,17 @@ app connMvar threadIDMvar respMap connection = do
           Nothing   -> putStrLn "app: Missing MVar!"
       Nothing -> putStrLn $ "app: Invalid Response: " <> decodeUtf8 (BL.toStrict msg)
 
-connectIO :: ConnectionInfo -> IO ConnectionState
-connectIO ConnectionInfo { .. } = do
+connectRPC :: MonadUnliftIO m => ConnectionInfo -> m RPCConnectionState
+connectRPC ConnectionInfo { .. } = do
   connMVar <- newEmptyMVar
   threadIDMVar <- newEmptyMVar
   respTVar <- newTVarIO M.empty
-  _ <- liftIO $ forkIO $ withSocketsDo $ WS.runClient url port "/rpc" (app connMVar threadIDMVar respTVar)
+  _ <- liftIO $ forkIO $ withSocketsDo $ WS.runClient url port "/rpc" (rpcApp connMVar threadIDMVar respTVar)
   conn <- readMVar connMVar
   tid <- readMVar threadIDMVar
   reqIDTvar <- newTVarIO 0
-  let connectionState = ConnectionState conn reqIDTvar respTVar tid
-  signinRes <- runSignIn connectionState $ sendIO "signin"
+  let connectionState = RPCConnectionState conn reqIDTvar respTVar tid
+  signinRes <- runSignIn connectionState $ sendRPC "signin"
                [object [ "user" .= user
                        , "pass" .= pass
                        , "ns" .= ns
@@ -64,21 +79,21 @@ connectIO ConnectionInfo { .. } = do
         else throw $ SigninError error
     Left e -> throw e
   where
-    runSignIn :: ConnectionState -> ReaderT ConnectionState IO Response -> IO (Either SomeException Response)
+    runSignIn :: MonadUnliftIO m => RPCConnectionState -> ReaderT RPCConnectionState m Response -> m (Either SomeException Response)
     runSignIn cs x = try $ runReaderT x cs
 
-getNextRequestIDIO :: ReaderT ConnectionState IO Int
-getNextRequestIDIO = do
-  ConnectionState { .. } <- ask
+getNextRequestIDRPC :: (MonadIO m, MonadReader RPCConnectionState m) => m Int
+getNextRequestIDRPC = do
+  RPCConnectionState { .. } <- ask
   atomically $ do
     nextID <- readTVar nextReqID
     writeTVar nextReqID $ nextID + 1
     return nextID
 
-sendIO :: Text -> [Value] -> ReaderT ConnectionState IO Response
-sendIO method params = do
-  ConnectionState { .. } <- ask
-  nextID <- getNextRequestIDIO
+sendRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Text -> [Value] -> m Response
+sendRPC method params = do
+  RPCConnectionState { .. } <- ask
+  nextID <- getNextRequestIDRPC
   mvar <- newEmptyMVar
   atomically $ modifyTVar' respMap (M.insert nextID mvar)
   let req = Request nextID method params
@@ -94,8 +109,8 @@ sendIO method params = do
     Right r -> return r
     Left e  -> throw e
 
-runQueryIO :: MonadSurreal m => input -> Query input (m output) -> m output
-runQueryIO input (Query q encoder decoder) = do
+runQueryRPC :: MonadSurreal m => input -> Query input (m output) -> m output
+runQueryRPC input (Query q encoder decoder) = do
   let encodedInput = encoder input
   Response { result = result, error = err } <- send "query" [String q, encodedInput]
   case err of

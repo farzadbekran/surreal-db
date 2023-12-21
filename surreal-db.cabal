@@ -33,7 +33,7 @@ library
       Database.Surreal.TH
       Database.Surreal.TypeHandler
       Database.Surreal.Types
-      Database.Surreal.WS.RPC.Surreal
+      Database.Surreal.WS.RPC
   other-modules:
       Paths_surreal_db
   hs-source-dirs:
