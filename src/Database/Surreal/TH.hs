@@ -18,31 +18,23 @@ import           Control.Monad.Fail
 import           Data.Aeson                      as Aeson
 import           Data.Aeson.KeyMap
 import           Data.Row.Records
-import qualified Data.Vector                     as V
 import           Database.Surreal.AST            ( HasInput (getInputs) )
 import qualified Database.Surreal.AST            as AST
 import           Database.Surreal.Parser
 import           Database.Surreal.TypeHandler
+import           Database.Surreal.Types
 import           Database.Surreal.WS.RPC.Surreal as RPC
 import           Language.Haskell.TH
 import           Language.Haskell.TH.Quote
 import           Language.Haskell.TH.Syntax
 import           Text.Megaparsec                 hiding ( Label )
 
--- | The type used by TH to parse SurrealQL
-data Query input output
-  = Query Text (input -> Value) (Value -> Surreal output)
+-- reEncode :: (i2 -> i) -> Query i o -> Query i2 o
+-- reEncode f (Query t ie od)  = Query t (ie . f) od
 
-newtype DecodeError
-  = DecodeError String
-  deriving (Exception, Show)
-
-reEncode :: (i2 -> i) -> Query i o -> Query i2 o
-reEncode f (Query t ie od)  = Query t (ie . f) od
-
-reDecode :: (o -> Surreal o2) -> Query i o -> Query i o2
-reDecode f (Query t ie od)
-  = Query t ie (od >=> f)
+-- reDecode :: (o -> Surreal o2) -> Query i o -> Query i o2
+-- reDecode f (Query t ie od)
+--   = Query t ie (od >=> f)
 
 sql :: QuasiQuoter
 sql = QuasiQuoter
@@ -100,29 +92,29 @@ parseSQL s = do
     getInputEncoder [] = [| (\_ -> object [] ) |]
     getInputEncoder inputs = [| toJSON :: Rec $(mkRecTypeFromInputs inputs) -> Value |]
 
-runQuery :: input -> Query input output -> Surreal output
-runQuery input (Query q encoder decoder) = do
-  let encodedInput = encoder input
-  r@RPC.Response { RPC.result = result, RPC.error = err } <- RPC.send "query" [String q, encodedInput]
-  print r
-  case err of
-    Just e  -> P.throwIO e
-    Nothing -> case result of
-      Just (Array arr) -> do
-        results <- mapM checkForErrorsAndExtractResults arr
-        decoder $ fromMaybe Null (lastMay results)
-      v -> P.throwIO $ DecodeError
-        $ "runQuery: Unexpected result format: expecting array but got: "
-        <> pack (show v)
-  where
-    checkForErrorsAndExtractResults :: Value -> Surreal Value
-    checkForErrorsAndExtractResults (Object o) = case o !? "status" of
-      Just (String "OK") -> case o !? "result" of
-        Just r -> return r
-        Nothing -> P.throwIO $ DecodeError
-          $ "runQuery: missing 'result' key in result map: " <> show o
-      s -> P.throwIO $ DecodeError
-        $ "runQuery: Unexpected status: " <> show s
-    checkForErrorsAndExtractResults v = P.throwIO $ DecodeError
-      $ "runQuery: Unexpected result format: expecting object but got: "
-      <> pack (show v)
+-- runQuery :: input -> Query input output -> Surreal output
+-- runQuery input (Query q encoder decoder) = do
+--   let encodedInput = encoder input
+--   r@Response { result = result, error = err } <- RPC.send "query" [String q, encodedInput]
+--   print r
+--   case err of
+--     Just e  -> P.throwIO e
+--     Nothing -> case result of
+--       Just (Array arr) -> do
+--         results <- mapM checkForErrorsAndExtractResults arr
+--         decoder $ fromMaybe Null (lastMay results)
+--       v -> P.throwIO $ DecodeError
+--         $ "runQuery: Unexpected result format: expecting array but got: "
+--         <> pack (show v)
+--   where
+--     checkForErrorsAndExtractResults :: Value -> Surreal Value
+--     checkForErrorsAndExtractResults (Object o) = case o !? "status" of
+--       Just (String "OK") -> case o !? "result" of
+--         Just r -> return r
+--         Nothing -> P.throwIO $ DecodeError
+--           $ "runQuery: missing 'result' key in result map: " <> show o
+--       s -> P.throwIO $ DecodeError
+--         $ "runQuery: Unexpected status: " <> show s
+--     checkForErrorsAndExtractResults v = P.throwIO $ DecodeError
+--       $ "runQuery: Unexpected result format: expecting object but got: "
+--       <> pack (show v)

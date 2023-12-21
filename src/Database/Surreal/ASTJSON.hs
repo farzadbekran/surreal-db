@@ -22,7 +22,7 @@ instance FromJSON RecordID where
       case rid of
         Right ast -> return ast
         Left e    -> parseFail $ errorBundlePretty e
-    a -> prependFailure "parsing Coord failed, "
+    a -> prependFailure "parsing RecordID failed, "
       (typeMismatch "Object" a)
 
 instance ToJSON RecordID where

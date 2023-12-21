@@ -2,85 +2,25 @@
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE RankNTypes #-}
 
 module Database.Surreal.WS.RPC.Surreal where
 
-import           ClassyPrelude        hiding ( error, id )
-import           Control.Concurrent   ( ThreadId, forkIO, myThreadId,
-                                        threadDelay )
-import           Control.Exception    ( throw )
-import           Data.Aeson           ( FromJSON, ToJSON, Value, decode, encode,
-                                        object, (.=) )
-import qualified Data.ByteString.Lazy as BL
-import           Data.Map.Strict      as M
-import           Network.Socket       ( withSocketsDo )
-import qualified Network.WebSockets   as WS
-
-type Surreal a = ReaderT ConnectionState IO a
-
-data ConnectionState
-  = ConnectionState
-      { conn           :: WS.Connection
-      , nextReqID      :: TVar Int
-      , respMap        :: TVar (Map Int (MVar Response))
-      , listenerThread :: ThreadId
-      }
-
-data NetworkException
-  = NotConnected
-  | InvalidResponse Text
-  | RequestTimeout Request
-  | SigninError (Maybe Error)
-  deriving (Exception, Show)
-
-data Request
-  = Request
-      { id     :: Int
-      , method :: Text
-      , params :: [Value]
-      }
-  deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
-
-data Response
-  = Response
-      { id     :: Int
-      , result :: Maybe Value
-      , error  :: Maybe Error
-      }
-  deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
-
-data QueryResult
-  = QueryResult
-      { result :: Maybe Value
-      , status :: Text
-      , time   :: Text
-      }
-  deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
-
-data Error
-  = Error
-      { code    :: Int
-      , message :: Text
-      }
-  deriving (Eq, Exception, FromJSON, Generic, Read, Show, ToJSON)
-
-data ConnectionInfo
-  = ConnectionInfo
-      { url  :: String
-      , port :: Int
-      , user :: Text
-      , pass :: Text
-      , ns   :: Text
-      , db   :: Text
-      }
-  deriving (Eq, Read, Show)
-
-defaultConnectionInfo :: ConnectionInfo
-defaultConnectionInfo = ConnectionInfo "0.0.0.0" 8000 "root" "root" "test" "test"
+import           ClassyPrelude          hiding ( error, id )
+import           Control.Concurrent     ( ThreadId, forkIO, myThreadId,
+                                          threadDelay )
+import           Control.Exception      ( throw )
+import           Data.Aeson             ( Value (..), decode, encode, object,
+                                          (.=) )
+import qualified Data.Aeson.KeyMap      as AKM
+import qualified Data.ByteString.Lazy   as BL
+import           Data.Map.Strict        as M
+import           Database.Surreal.Types
+import           Network.Socket         ( withSocketsDo )
+import qualified Network.WebSockets     as WS
 
 {- |
 listens to the connection and writes responses to the
@@ -102,8 +42,8 @@ app connMvar threadIDMvar respMap connection = do
           Nothing   -> putStrLn "app: Missing MVar!"
       Nothing -> putStrLn $ "app: Invalid Response: " <> decodeUtf8 (BL.toStrict msg)
 
-connect :: MonadIO m => ConnectionInfo -> m ConnectionState
-connect ConnectionInfo { .. } = do
+connectIO :: ConnectionInfo -> IO ConnectionState
+connectIO ConnectionInfo { .. } = do
   connMVar <- newEmptyMVar
   threadIDMVar <- newEmptyMVar
   respTVar <- newTVarIO M.empty
@@ -112,30 +52,33 @@ connect ConnectionInfo { .. } = do
   tid <- readMVar threadIDMVar
   reqIDTvar <- newTVarIO 0
   let connectionState = ConnectionState conn reqIDTvar respTVar tid
-  signinRes <- runSurreal connectionState $ send "signin"
-    [object [ "user" .= user
-            , "pass" .= pass
-            , "ns" .= ns
-            , "db" .= db]]
+  signinRes <- runSignIn connectionState $ sendIO "signin"
+               [object [ "user" .= user
+                       , "pass" .= pass
+                       , "ns" .= ns
+                       , "db" .= db]]
   case signinRes of
     Right Response { error } ->
       if isNothing error
         then return connectionState
         else throw $ SigninError error
     Left e -> throw e
+  where
+    runSignIn :: ConnectionState -> ReaderT ConnectionState IO Response -> IO (Either SomeException Response)
+    runSignIn cs x = try $ runReaderT x cs
 
-getNextRequestID :: Surreal Int
-getNextRequestID = do
+getNextRequestIDIO :: ReaderT ConnectionState IO Int
+getNextRequestIDIO = do
   ConnectionState { .. } <- ask
   atomically $ do
     nextID <- readTVar nextReqID
     writeTVar nextReqID $ nextID + 1
     return nextID
 
-send :: Text -> [Value] -> Surreal Response
-send method params = do
+sendIO :: Text -> [Value] -> ReaderT ConnectionState IO Response
+sendIO method params = do
   ConnectionState { .. } <- ask
-  nextID <- getNextRequestID
+  nextID <- getNextRequestIDIO
   mvar <- newEmptyMVar
   atomically $ modifyTVar' respMap (M.insert nextID mvar)
   let req = Request nextID method params
@@ -151,5 +94,28 @@ send method params = do
     Right r -> return r
     Left e  -> throw e
 
-runSurreal :: (MonadIO m) => ConnectionState -> Surreal a -> m (Either SomeException a)
-runSurreal cs surr = liftIO $ try $ runReaderT surr cs
+runQueryIO :: MonadSurreal m => input -> Query input (m output) -> m output
+runQueryIO input (Query q encoder decoder) = do
+  let encodedInput = encoder input
+  Response { result = result, error = err } <- send "query" [String q, encodedInput]
+  case err of
+    Just e  -> throw e
+    Nothing -> case result of
+      Just (Array arr) -> do
+        results <- mapM checkForErrorsAndExtractResults arr
+        decoder $ fromMaybe Null (lastMay results)
+      v -> throw $ DecodeError
+        $ "runQuery: Unexpected result format: expecting array but got: "
+        <> pack (show v)
+  where
+    checkForErrorsAndExtractResults :: MonadSurreal m => Value -> m Value
+    checkForErrorsAndExtractResults (Object o) = case o AKM.!? "status" of
+      Just (String "OK") -> case o AKM.!? "result" of
+        Just r -> return r
+        Nothing -> throw $ DecodeError
+          $ "runQuery: missing 'result' key in result map: " <> show o
+      s -> throw $ DecodeError
+        $ "runQuery: Unexpected status: " <> show s
+    checkForErrorsAndExtractResults v = throw $ DecodeError
+      $ "runQuery: Unexpected result format: expecting object but got: "
+      <> pack (show v)

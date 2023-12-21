@@ -27,6 +27,7 @@ dependencies:
 - text
 - network
 - mtl
+- transformers
 - containers
 - bytestring
 - Decimal
@@ -59,17 +60,6 @@ default-extensions:
 
 library:
   source-dirs: src
-
-executables:
-  surreal-db-exe:
-    main:                Main.hs
-    source-dirs:         app
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - surreal-db
 
 tests:
   surreal-db-test:

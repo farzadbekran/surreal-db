@@ -27,12 +27,13 @@ library
   exposed-modules:
       Database.Surreal.AST
       Database.Surreal.ASTJSON
+      Database.Surreal.Core
       Database.Surreal.ManualTest
       Database.Surreal.Parser
       Database.Surreal.TH
       Database.Surreal.TypeHandler
+      Database.Surreal.Types
       Database.Surreal.WS.RPC.Surreal
-      Lib
   other-modules:
       Paths_surreal_db
   hs-source-dirs:
@@ -61,41 +62,7 @@ library
     , template-haskell
     , text
     , time
-    , vector
-    , websockets
-  default-language: Haskell2010
-
-executable surreal-db-exe
-  main-is: Main.hs
-  other-modules:
-      Paths_surreal_db
-  hs-source-dirs:
-      app
-  default-extensions:
-      OverloadedLabels
-      OverloadedStrings
-      NoImplicitPrelude
-  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      Decimal
-    , aeson
-    , base >=4.7 && <5
-    , bytestring
-    , classy-prelude
-    , containers
-    , first-class-families
-    , iso8601-time
-    , megaparsec
-    , mtl
-    , network
-    , parser-combinators
-    , profunctors
-    , row-types
-    , row-types-aeson
-    , surreal-db
-    , template-haskell
-    , text
-    , time
+    , transformers
     , vector
     , websockets
   default-language: Haskell2010
@@ -132,6 +99,7 @@ test-suite surreal-db-test
     , template-haskell
     , text
     , time
+    , transformers
     , vector
     , websockets
   default-language: Haskell2010
