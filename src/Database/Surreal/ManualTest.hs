@@ -12,19 +12,29 @@
 
 module Database.Surreal.ManualTest where
 
-import           ClassyPrelude                   as P
+import           ClassyPrelude           as P
 import           Data.Row
-import           Data.Row.Aeson                  ()
+import           Data.Row.Aeson          ()
 import           Database.Surreal.Core
 import           Database.Surreal.WS.RPC
+import           Database.Surreal.WS.RPCTypes
 
-data MyAppState = MyAppState { surrealState :: RPCConnectionState
-                             , someOtherState :: Text
-                             }
+data MyAppState
+  = MyAppState
+      { surrealState   :: RPCConnectionState
+      , someOtherState :: Text
+      }
 
 newtype MyApp a
   = MyApp (ReaderT MyAppState IO a)
-  deriving (Applicative, Functor, Monad, MonadIO, MonadUnliftIO, MonadReader MyAppState)
+  deriving
+    ( Applicative
+    , Functor
+    , Monad
+    , MonadIO
+    , MonadReader MyAppState
+    , MonadUnliftIO
+    )
 
 instance MonadSurreal MyApp where
   getNextRequestID = do

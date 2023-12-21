@@ -1,41 +1,51 @@
-{-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Database.Surreal.WS.RPC where
 
-import           ClassyPrelude          hiding ( error, id )
-import           Control.Concurrent     ( ThreadId, forkIO, myThreadId,
-                                          threadDelay )
-import           Control.Exception      ( throw )
-import           Data.Aeson             ( Value (..), decode, encode, object,
-                                          (.=) )
-import qualified Data.Aeson.KeyMap      as AKM
-import qualified Data.ByteString.Lazy   as BL
-import           Data.Map.Strict        as M
+import           ClassyPrelude                hiding ( error, id )
+import           Control.Concurrent           ( ThreadId, forkIO, myThreadId,
+                                                threadDelay )
+import           Control.Exception            ( throw )
+import           Data.Aeson                   ( Value (..), decode, encode,
+                                                object, (.=) )
+import qualified Data.Aeson.KeyMap            as AKM
+import qualified Data.ByteString.Lazy         as BL
+import           Data.Map.Strict              as M
 import           Database.Surreal.Types
-import           Network.Socket         ( withSocketsDo )
-import qualified Network.WebSockets     as WS
+import           Database.Surreal.WS.RPCTypes
+import           Network.Socket               ( withSocketsDo )
+import qualified Network.WebSockets           as WS
 
-data RPCConnectionState
-  = RPCConnectionState
-      { conn           :: WS.Connection
-      , nextReqID      :: TVar Int
-      , respMap        :: TVar (Map Int (MVar Response))
-      , listenerThread :: ThreadId
-      }
+newtype SurrealRPC a
+  = SurrealRPC { unSurrealRPC :: ReaderT RPCConnectionState IO a }
+  deriving
+    ( Applicative
+    , Functor
+    , Monad
+    , MonadIO
+    , MonadReader RPCConnectionState
+    , MonadUnliftIO
+    )
 
-data RPCNetworkException
-  = NotConnected
-  | InvalidResponse Text
-  | RequestTimeout Request
-  | SigninError (Maybe SurrealError)
-  deriving (Exception, Show)
+instance MonadSurreal SurrealRPC where
+  getNextRequestID = do
+    cs <- ask
+    runReaderT getNextRequestIDRPC cs
+  send t vs = do
+    cs <- ask
+    runReaderT (sendRPC t vs) cs
+  runQuery = runQueryRPC
+
+runSurrealRPC :: RPCConnectionState -> SurrealRPC a -> IO a
+runSurrealRPC cs m = runReaderT (unSurrealRPC m) cs
 
 {- |
 listens to the connection and writes responses to the
