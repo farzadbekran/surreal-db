@@ -12,12 +12,13 @@
 module Database.Surreal.Types where
 
 import           ClassyPrelude hiding ( error, id )
+import           Control.Monad ( MonadFail )
 import           Data.Aeson    as J
 
-class Monad m => MonadSurreal m where
+class MonadFail m => MonadSurreal m where
   getNextRequestID :: m Int
   send :: Text -> [Value] -> m Response
-  runQuery :: input -> Query input (m output) -> m output
+  runQuery :: input -> Query input (Either DecodeError output) -> m output
 
 data Request
   = Request

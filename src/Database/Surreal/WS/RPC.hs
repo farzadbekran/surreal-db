@@ -14,6 +14,7 @@ import           ClassyPrelude                hiding ( error, id )
 import           Control.Concurrent           ( ThreadId, forkIO, myThreadId,
                                                 threadDelay )
 import           Control.Exception            ( throw )
+import           Control.Monad.Fail
 import           Data.Aeson                   ( Value (..), decode, encode,
                                                 object, (.=) )
 import qualified Data.Aeson.KeyMap            as AKM
@@ -30,6 +31,7 @@ newtype SurrealRPC a
     ( Applicative
     , Functor
     , Monad
+    , MonadFail
     , MonadIO
     , MonadReader RPCConnectionState
     , MonadUnliftIO
@@ -119,7 +121,7 @@ sendRPC method params = do
     Right r -> return r
     Left e  -> throw e
 
-runQueryRPC :: MonadSurreal m => input -> Query input (m output) -> m output
+runQueryRPC :: MonadSurreal m => input -> Query input (Either DecodeError output) -> m output
 runQueryRPC input (Query q encoder decoder) = do
   let encodedInput = encoder input
   Response { result = result, error = err } <- send "query" [String q, encodedInput]
@@ -128,7 +130,9 @@ runQueryRPC input (Query q encoder decoder) = do
     Nothing -> case result of
       Just (Array arr) -> do
         results <- mapM checkForErrorsAndExtractResults arr
-        decoder $ fromMaybe Null (lastMay results)
+        case decoder $ fromMaybe Null (lastMay results) of
+          Right r -> return r
+          Left e  -> fail $ show e
       v -> throw $ DecodeError
         $ "runQuery: Unexpected result format: expecting array but got: "
         <> pack (show v)

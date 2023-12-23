@@ -48,18 +48,18 @@ getExpResultDecoder e = do
   case e of
     AST.SelectE {} -> do
       [| (\r -> case fromJSON @[Rec $(return t)] r of
-             Aeson.Success r2 -> return r2
-             Aeson.Error err  -> P.throwIO $ DecodeError err)
+             Aeson.Success r2 -> Right r2
+             Aeson.Error err  -> Left $ DecodeError err)
        |]
     AST.TypedE {} -> do
       [| (\r -> case fromJSON @($(return t)) r of
-             Aeson.Success r2 -> return r2
-             Aeson.Error err  -> P.throwIO $ DecodeError err)
+             Aeson.Success r2 -> Right r2
+             Aeson.Error err  -> Left $ DecodeError err)
        |]
     AST.ReturnE {} -> do
       [| (\r -> case fromJSON @($(return t)) r of
-             Aeson.Success r2 -> return r2
-             Aeson.Error err  -> P.throwIO $ DecodeError err)
+             Aeson.Success r2 -> Right r2
+             Aeson.Error err  -> Left $ DecodeError err)
        |]
     _ -> fail "unimplemented decoder!"
 

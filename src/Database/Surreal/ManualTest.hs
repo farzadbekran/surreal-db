@@ -12,9 +12,10 @@
 
 module Database.Surreal.ManualTest where
 
-import           ClassyPrelude           as P
+import           ClassyPrelude                as P
+import           Control.Monad                ( MonadFail )
 import           Data.Row
-import           Data.Row.Aeson          ()
+import           Data.Row.Aeson               ()
 import           Database.Surreal.Core
 import           Database.Surreal.WS.RPC
 import           Database.Surreal.WS.RPCTypes
@@ -31,6 +32,7 @@ newtype MyApp a
     ( Applicative
     , Functor
     , Monad
+    , MonadFail
     , MonadIO
     , MonadReader MyAppState
     , MonadUnliftIO
