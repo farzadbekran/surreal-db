@@ -1,12 +1,16 @@
+{-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeSynonymInstances       #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Database.Surreal.WS.RPC where
 
@@ -15,6 +19,7 @@ import           Control.Concurrent           ( ThreadId, forkIO, myThreadId,
                                                 threadDelay )
 import           Control.Exception            ( throw )
 import           Control.Monad.Fail
+import           Control.Monad.Trans          ( MonadTrans )
 import           Data.Aeson                   ( Value (..), decode, encode,
                                                 object, (.=) )
 import qualified Data.Aeson.KeyMap            as AKM
@@ -48,6 +53,35 @@ instance MonadSurreal SurrealRPC where
 
 runSurrealRPC :: RPCConnectionState -> SurrealRPC a -> IO a
 runSurrealRPC cs m = runReaderT (unSurrealRPC m) cs
+
+newtype SurrealRPCT m a
+  = SurrealRPCT { unSurrealRPCT :: ReaderT RPCConnectionState m a }
+  deriving
+    ( Applicative
+    , Functor
+    , Monad
+    , MonadFail
+    , MonadIO
+    , MonadReader RPCConnectionState
+    , MonadUnliftIO
+    )
+
+instance (MonadIO m, MonadFail m) => MonadSurreal (SurrealRPCT m) where
+  getNextRequestID = do
+    cs <- ask
+    liftIO $ runReaderT getNextRequestIDRPC cs
+  send t vs = do
+    cs <- ask
+    liftIO $ runReaderT (sendRPC t vs) cs
+  runQuery = runQueryRPC
+
+instance (MonadIO m, MonadTrans t, MonadFail (t (SurrealRPCT m)), MonadFail m) => MonadSurreal (t (SurrealRPCT m)) where
+  getNextRequestID = lift getNextRequestID
+  send t vs = lift $ send t vs
+  runQuery input query = lift $ runQuery input query
+
+runSurrealRPCT :: RPCConnectionState -> SurrealRPCT m a -> m a
+runSurrealRPCT cs action = runReaderT (unSurrealRPCT action) cs
 
 {- |
 listens to the connection and writes responses to the
