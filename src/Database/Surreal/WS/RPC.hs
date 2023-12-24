@@ -49,6 +49,8 @@ instance MonadSurreal SurrealRPC where
     cs <- ask
     runReaderT (sendRPC t vs) cs
   runQuery = runQueryRPC
+  registerLiveListener = registerLiveListenerRPC
+  unregisterLiveListener = unregisterLiveListenerRPC
 
 runSurrealRPC :: RPCConnectionState -> SurrealRPC a -> IO a
 runSurrealRPC cs m = runReaderT (unSurrealRPC m) cs
@@ -65,7 +67,7 @@ newtype SurrealRPCT m a
     , MonadUnliftIO
     )
 
-instance (MonadIO m, MonadFail m) => MonadSurreal (SurrealRPCT m) where
+instance (MonadFail m, MonadUnliftIO m) => MonadSurreal (SurrealRPCT m) where
   getNextRequestID = do
     cs <- ask
     liftIO $ runReaderT getNextRequestIDRPC cs
@@ -73,11 +75,19 @@ instance (MonadIO m, MonadFail m) => MonadSurreal (SurrealRPCT m) where
     cs <- ask
     liftIO $ runReaderT (sendRPC t vs) cs
   runQuery = runQueryRPC
+  registerLiveListener = registerLiveListenerRPC
+  unregisterLiveListener = unregisterLiveListenerRPC
 
-instance (MonadIO m, MonadTrans t, MonadFail (t (SurrealRPCT m)), MonadFail m) => MonadSurreal (t (SurrealRPCT m)) where
+instance ( MonadUnliftIO m
+         , MonadTrans t
+         , MonadFail (t (SurrealRPCT m))
+         , MonadFail m) =>
+         MonadSurreal (t (SurrealRPCT m)) where
   getNextRequestID = lift getNextRequestID
   send t vs = lift $ send t vs
   runQuery input query = lift $ runQuery input query
+  registerLiveListener t handler = lift $ registerLiveListenerRPC t handler
+  unregisterLiveListener t = lift $ unregisterLiveListenerRPC t
 
 runSurrealRPCT :: RPCConnectionState -> SurrealRPCT m a -> m a
 runSurrealRPCT cs action = runReaderT (unSurrealRPCT action) cs
@@ -204,3 +214,15 @@ runQueryRPC input (Query q encoder decoder) = do
     checkForErrorsAndExtractResults v = throw $ DecodeError
       $ "runQuery: Unexpected result format: expecting object but got: "
       <> pack (show v)
+
+registerLiveListenerRPC :: ( MonadIO m, MonadReader RPCConnectionState m) => Text -> (LiveResponse -> IO ()) -> m ()
+registerLiveListenerRPC uuid handler = do
+  RPCConnectionState { .. } <- ask
+  atomically $ modifyTVar' liveRespMap (M.insert uuid handler)
+
+unregisterLiveListenerRPC :: ( MonadReader RPCConnectionState m, MonadUnliftIO m) => Text -> m ()
+unregisterLiveListenerRPC uuid = do
+  Response { error = err } <- sendRPC "query" [String $ "KILL \"" <> uuid <> "\";"]
+  forM_ err throw
+  RPCConnectionState { .. } <- ask
+  atomically $ modifyTVar' liveRespMap (M.delete uuid)

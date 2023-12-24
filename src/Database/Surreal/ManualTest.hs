@@ -60,6 +60,23 @@ test = do
   --runQuery (#name .== "my-name" .+ #fname .== 123) q
   runQuery ("my-name", 123) q3
 
+testLiveQuery :: MyApp ()
+testLiveQuery = do
+  let q = [sql|
+              live select * from artist;
+              |]
+  uuid <- runQuery () q
+  listenMvar <- newEmptyMVar
+  let handler = putMVar listenMvar
+  print uuid
+  registerLiveListener uuid handler
+  --unregisterLiveListener uuid
+  _ <- tryAny $ unregisterLiveListener "test" -- this causes an error on db side
+  _ <- forever $ do
+    r <- takeMVar listenMvar
+    putStrLn $ "received live notification: " <> tshow r
+  return ()
+
 -- test2 :: IO ()
 -- test2 = do
 --   connState <- connect defaultConnectionInfo

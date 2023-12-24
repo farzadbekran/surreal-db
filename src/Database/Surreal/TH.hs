@@ -61,7 +61,9 @@ getExpResultDecoder e = do
              Aeson.Success r2 -> Right r2
              Aeson.Error err  -> Left $ DecodeError err)
        |]
-    AST.LiveSelectE {} -> [| (\_ -> return ()) |]
+    AST.LiveSelectE {} -> [| (\r -> case fromJSON @($(return t)) r of
+                                 Aeson.Success r2 -> Right r2
+                                 Aeson.Error err  -> Left $ DecodeError err) |]
     _ -> fail "unimplemented decoder!"
 
 getLineResultDecoder :: AST.SurQLLine -> Q Exp

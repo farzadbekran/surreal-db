@@ -20,6 +20,8 @@ class MonadFail m => MonadSurreal m where
   getNextRequestID :: m Int
   send :: Text -> [Value] -> m Response
   runQuery :: input -> Query input (Either DecodeError output) -> m output
+  registerLiveListener :: Text -> (LiveResponse -> IO ()) -> m ()
+  unregisterLiveListener :: Text -> m ()
 
 data Request
   = Request
