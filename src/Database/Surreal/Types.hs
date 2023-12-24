@@ -37,12 +37,18 @@ data Response
       }
   deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
 
-data QueryResult
-  = QueryResult
-      { result :: Maybe Value
-      , status :: Text
-      , time   :: Text
+data LiveAction = CREATE | UPDATE | DELETE
+  deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
+
+data LiveResponse
+  = LiveResponse
+      { id     :: Text
+      , result :: Value
+      , action :: LiveAction
       }
+  deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
+
+newtype LiveNotification = LiveNotification { result :: LiveResponse }
   deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
 
 data SurrealError

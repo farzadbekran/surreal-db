@@ -580,6 +580,23 @@ selectE = label "SelectE" $ lexeme $ do
   mExplain <- optional explain
   return $ SelectE mValue sels mOmit from_ mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain
 
+liveSelectE :: Parser Exp
+liveSelectE = label "LiveSelectE" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "LIVE"
+  _ <- caseInsensitiveSymbol "SELECT"
+  mValue <- optional $ caseInsensitiveSymbol "VALUE" $> VALUE
+  sels <- do
+    ss <- optional $ try selectors
+    diff <- optional $ try $ caseInsensitiveSymbol "DIFF"
+    case (ss,diff) of
+      (Just s, Nothing) -> return $ Right s
+      (Nothing, Just _) -> return $ Left DIFF
+      _ -> fail "failed to parse selectors for live select!"
+  from_ <- from
+  mWhere <- optional where_
+  mFetch <- optional fetch
+  return $ LiveSelectE mValue sels from_ mWhere mFetch
+
 onDuplicate :: Parser OnDuplicate
 onDuplicate = label "onDuplicate" $ lexeme $ do
   _ <- mapM caseInsensitiveSymbol ["ON", "DUPLICATE", "KEY", "UPDATE"]
@@ -829,6 +846,7 @@ term = sc
               [ ifThenE
               , ifThenElseE
               , selectE
+              , liveSelectE
               , insertE
               , createE
               , updateE

@@ -86,36 +86,48 @@ runSurrealRPCT cs action = runReaderT (unSurrealRPCT action) cs
 listens to the connection and writes responses to the
 response map.
 -}
-rpcApp :: MVar WS.Connection -> MVar ThreadId -> TVar (Map Int (MVar Response)) -> WS.ClientApp ()
-rpcApp connMvar threadIDMvar respMap connection = do
+rpcApp :: MVar WS.Connection -> MVar ThreadId -> TVar (Map Int (MVar Response)) -> TVar (Map Text (LiveResponse -> IO ())) -> WS.ClientApp ()
+rpcApp connMvar threadIDMvar respMap liveRespMap connection = do
   putMVar connMvar connection
   tid <- myThreadId
   putMVar threadIDMvar tid
   forever $ do
     msg <- WS.receiveData connection
     let rsp = decode msg :: Maybe Response
+        liveNotification = decode msg :: Maybe LiveNotification
     case rsp of
       Just r@Response { .. } -> do
         mvarMap <- readTVarIO respMap
         case mvarMap !? id of
           Just mvar -> putMVar mvar r
-          Nothing   -> putStrLn "app: Missing MVar!"
-      Nothing -> putStrLn $ "app: Invalid Response: " <> decodeUtf8 (BL.toStrict msg)
+          Nothing   -> putStrLn "rpcApp: Missing response MVar!"
+      _ -> pure ()
+    case liveNotification of
+      Just (LiveNotification lr@(LiveResponse { .. })) -> do
+        mvarMap <- readTVarIO liveRespMap
+        case mvarMap !? id of
+          Just f  -> void $ forkIO $ f lr
+          Nothing -> putStrLn "rpcApp: Missing live response handler!"
+      _ -> pure ()
+    case (rsp, liveNotification) of
+      (Nothing, Nothing) -> putStrLn $ "rpcApp: Invalid Response: " <> decodeUtf8 (BL.toStrict msg)
+      _ -> pure ()
 
 connectRPC :: MonadUnliftIO m => ConnectionInfo -> m RPCConnectionState
 connectRPC ConnectionInfo { .. } = do
   connMVar <- newEmptyMVar
   threadIDMVar <- newEmptyMVar
   respTVar <- newTVarIO M.empty
+  liveRespTVar <- newTVarIO M.empty
   parentThreadID <- liftIO myThreadId
   _ <- liftIO $ forkIO
     $ catchAny
-    (withSocketsDo $ WS.runClient url port "/rpc" (rpcApp connMVar threadIDMVar respTVar))
+    (withSocketsDo $ WS.runClient url port "/rpc" (rpcApp connMVar threadIDMVar respTVar liveRespTVar))
     (throwTo parentThreadID)
   conn <- readMVar connMVar
   tid <- readMVar threadIDMVar
   reqIDTvar <- newTVarIO 0
-  let connectionState = RPCConnectionState conn reqIDTvar respTVar tid
+  let connectionState = RPCConnectionState conn reqIDTvar respTVar liveRespTVar tid
   signinRes <- runSignIn connectionState $ sendRPC "signin"
                [object [ "user" .= user
                        , "pass" .= pass

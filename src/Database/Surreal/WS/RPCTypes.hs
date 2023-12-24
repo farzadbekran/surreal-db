@@ -17,6 +17,7 @@ data RPCConnectionState
       { conn           :: WS.Connection
       , nextReqID      :: TVar Int
       , respMap        :: TVar (Map Int (MVar Response))
+      , liveRespMap    :: TVar (Map Text (LiveResponse -> IO ()))
       , listenerThread :: ThreadId
       }
 

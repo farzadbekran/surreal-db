@@ -51,10 +51,11 @@ test = do
             limit 2
             fetch cat;
             -- throw "asdasd";
+            live select * from artist;
             select 1 + 2 as ppp :: Int from artist limit 1;
             |]
       q2 = lmap (\(txt, i) -> #name .== txt .+ #fname .== i) q
-      q3 = rmap (\(r :: Either DecodeError [Rec ("ppp" .== Int)]) -> map (.! #ppp) <$> r) q2
+      q3 = rmap (\r -> map (.! #ppp) <$> r) q2
   putStr t
   --runQuery (#name .== "my-name" .+ #fname .== 123) q
   runQuery ("my-name", 123) q3

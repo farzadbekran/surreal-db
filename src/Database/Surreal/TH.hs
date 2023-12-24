@@ -61,9 +61,9 @@ getExpResultDecoder e = do
              Aeson.Success r2 -> Right r2
              Aeson.Error err  -> Left $ DecodeError err)
        |]
+    AST.LiveSelectE {} -> [| (\_ -> return ()) |]
     _ -> fail "unimplemented decoder!"
 
--- TODO: add support for return statement
 getLineResultDecoder :: AST.SurQLLine -> Q Exp
 getLineResultDecoder = \case
   AST.ExpLine e -> getExpResultDecoder e

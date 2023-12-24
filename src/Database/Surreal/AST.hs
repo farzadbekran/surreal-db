@@ -15,14 +15,27 @@ import           Data.Time.ISO8601 ( formatISO8601 )
 prepText :: [Text] -> Text
 prepText = unwords . filter (/= "") . map T.strip
 
-renderIfJust :: ToQL p => Maybe p -> Text
-renderIfJust = maybe "" toQL
-
 class ToQL a where
   toQL :: a -> Text
 
+instance ToQL a => ToQL (Maybe a) where
+  toQL (Just a) = toQL a
+  toQL _ = ""
+
+instance (ToQL a, ToQL b) => ToQL (Either a b) where
+  toQL (Left a) = toQL a
+  toQL (Right b) = toQL b
+
 class HasInput a where
   getInputs :: a -> [Param]
+
+instance HasInput a => HasInput (Maybe a) where
+  getInputs (Just a) = getInputs a
+  getInputs _ = []
+
+instance (HasInput a, HasInput b) => HasInput (Either a b) where
+  getInputs (Left a) = getInputs a
+  getInputs (Right b) = getInputs b
 
 newtype FNName
   = FNName Text
@@ -248,7 +261,7 @@ instance ToQL FROM where
     prepText [ "FROM"
              , if isJust mOnly then "ONLY" else ""
              , toQL e
-             , renderIfJust mWith
+             , toQL mWith
              ]
 
 instance HasInput FROM where
@@ -329,7 +342,7 @@ instance ToQL ORDER where
   toQL (ORDER fs) = prepText $ ["ORDER BY"] <> intersperse "," (map renderOrder fs)
     where
       renderOrder (f, mOrderType, mOrderDirection) =
-        prepText [ toQL f, renderIfJust mOrderType, renderIfJust mOrderDirection ]
+        prepText [ toQL f, toQL mOrderType, toQL mOrderDirection ]
 
 instance HasInput ORDER where
   getInputs (ORDER os) =
@@ -710,6 +723,15 @@ instance ToQL RelateTarget where
 instance HasInput RelateTarget where
   getInputs (RelateTarget rid1 _ rid2) = getInputs rid1 <> getInputs rid2
 
+data DIFF = DIFF
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL DIFF where
+  toQL _ = "DIFF"
+
+instance HasInput DIFF where
+  getInputs _ = []
+
 data Exp
   = TypedE Exp TypeDef
   | OPE Operator Exp Exp
@@ -720,6 +742,7 @@ data Exp
   | IfThenElseE Exp Exp Exp
   | EdgeSelectorE (Maybe Field) [Edge]
   | SelectE (Maybe VALUE) Selectors (Maybe OMIT) FROM (Maybe WHERE) (Maybe SPLIT) (Maybe GROUP) (Maybe ORDER) (Maybe LIMIT) (Maybe START) (Maybe FETCH) (Maybe TIMEOUT) (Maybe PARALLEL) (Maybe EXPLAIN)
+  | LiveSelectE (Maybe VALUE) (Either DIFF Selectors) FROM (Maybe WHERE) (Maybe FETCH)
   | InsertE (Maybe IGNORE) TableName InsertVal
   | CreateE (Maybe ONLY) Target CreateVal (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
   | DeleteE (Maybe ONLY) Target (Maybe WHERE) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
@@ -747,64 +770,72 @@ instance ToQL Exp where
     EdgeSelectorE mf es -> foldl1 (<>) $ maybe "" toQL mf : map toQL es
     SelectE mValue selectors mOmit from mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain ->
       prepText [ "SELECT"
-               , renderIfJust mValue
+               , toQL mValue
                , toQL selectors
-               , renderIfJust mOmit
+               , toQL mOmit
                , toQL from
-               , renderIfJust mWhere
-               , renderIfJust mSplit
-               , renderIfJust mGroup
-               , renderIfJust mOrder
-               , renderIfJust mLimit
-               , renderIfJust mStart
-               , renderIfJust mFetch
-               , renderIfJust mTimeout
-               , renderIfJust mParallel
-               , renderIfJust mExplain
+               , toQL mWhere
+               , toQL mSplit
+               , toQL mGroup
+               , toQL mOrder
+               , toQL mLimit
+               , toQL mStart
+               , toQL mFetch
+               , toQL mTimeout
+               , toQL mParallel
+               , toQL mExplain
+               ]
+    LiveSelectE mValue selectors from mWhere mFetch ->
+      prepText [ "LIVE SELECT"
+               , toQL mValue
+               , toQL selectors
+               , toQL from
+               , toQL mWhere
+               , toQL mFetch
                ]
     InsertE mIgnore tableName insertVal ->
       prepText [ "INSERT"
-               , renderIfJust mIgnore
+               , toQL mIgnore
                , "INTO"
                , toQL tableName
                , toQL insertVal
                ]
     CreateE mOnly target v mReturn mTimeout mParallel ->
       prepText [ "CREATE"
-               , renderIfJust mOnly
+               , toQL mOnly
                , toQL target
                , toQL v
-               , renderIfJust mReturn
-               , renderIfJust mTimeout
-               , renderIfJust mParallel
+               , toQL mReturn
+               , toQL mTimeout
+               , toQL mParallel
                ]
     UpdateE mOnly target v mWhere mReturn mTimeout mParallel ->
       prepText [ "UPDATE"
-               , renderIfJust mOnly
+               , toQL mOnly
                , toQL target
                , toQL v
-               , renderIfJust mWhere
-               , renderIfJust mReturn
-               , renderIfJust mTimeout
-               , renderIfJust mParallel
+               , toQL mWhere
+               , toQL mReturn
+               , toQL mTimeout
+               , toQL mParallel
                ]
     RelateE mOnly target v mReturn mTimeout mParallel ->
       prepText [ "RELATE"
-               , renderIfJust mOnly
+               , toQL mOnly
                , toQL target
-               , renderIfJust v
-               , renderIfJust mReturn
-               , renderIfJust mTimeout
-               , renderIfJust mParallel
+               , toQL v
+               , toQL mReturn
+               , toQL mTimeout
+               , toQL mParallel
                ]
     DeleteE mOnly target mWhere mReturn mTimeout mParallel ->
       prepText [ "DELETE"
-               , renderIfJust mOnly
+               , toQL mOnly
                , toQL target
-               , renderIfJust mWhere
-               , renderIfJust mReturn
-               , renderIfJust mTimeout
-               , renderIfJust mParallel
+               , toQL mWhere
+               , toQL mReturn
+               , toQL mTimeout
+               , toQL mParallel
                ]
     WhereE w -> toQL w
     ReturnE e -> "RETURN " <> toQL e
@@ -829,6 +860,11 @@ instance HasInput Exp where
       <> maybe [] getInputs mOrder
       <> maybe [] getInputs mLimit
       <> maybe [] getInputs mStart
+      <> maybe [] getInputs mFetch
+    LiveSelectE _ selectors from mWhere mFetch
+      -> getInputs selectors
+      <> getInputs from
+      <> maybe [] getInputs mWhere
       <> maybe [] getInputs mFetch
     InsertE _ _ insertVal
       -> getInputs insertVal
@@ -1013,8 +1049,8 @@ instance ToQL SearchAnalyzer where
     = prepText
       [ "SEARCH ANALYZER"
       , toQL an
-      , renderIfJust mBM25
-      , renderIfJust mHighlights
+      , toQL mBM25
+      , toQL mHighlights
       ]
 
 data Define
@@ -1039,7 +1075,7 @@ instance ToQL Define where
          [ "DEFINE USER"
          , toQL un
          , toQL level
-         , renderIfJust mPass
+         , toQL mPass
          , case mRoles of
              Just rs -> prepText $ "ROLES" : intersperse "," (map toQL rs)
              Nothing -> ""
@@ -1070,15 +1106,15 @@ instance ToQL Define where
       -> prepText
          [ "DEFINE TABLE"
          , toQL tn
-         , renderIfJust mDrop
-         , renderIfJust mSchema
+         , toQL mDrop
+         , toQL mSchema
          , case mExp of
              Just e  -> "AS (" <> toQL e <> ")"
              Nothing -> ""
          , case mDur of
              Just dur -> "CHANGEFEED " <> toQL dur
              Nothing  -> ""
-         , renderIfJust mPerms
+         , toQL mPerms
          ]
     DefEvent en tn mWhen thenE
       -> prepText
@@ -1098,7 +1134,7 @@ instance ToQL Define where
          , toQL f
          , "ON TABLE"
          , toQL tn
-         , renderIfJust mFieldType
+         , toQL mFieldType
          , case mDefExp of
              Just e  -> "DEFAULT " <> toQL e
              Nothing -> ""
@@ -1108,7 +1144,7 @@ instance ToQL Define where
          , case mAssertExp of
              Just e  -> "ASSERT " <> toQL e
              Nothing -> ""
-         , renderIfJust mPermissions
+         , toQL mPermissions
          ]
     DefAnalyzer an mTokenizers mFilters
       -> prepText
@@ -1135,7 +1171,7 @@ instance ToQL Define where
              Nothing -> ""
          ]
 
-data Throw
+newtype Throw
   = Throw Exp
   deriving (Eq, Generic, Read, Show)
 

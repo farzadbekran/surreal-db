@@ -110,6 +110,7 @@ getBaseType = \case
   ReturnE e -> getBaseType e
   se@(SelectE {}) -> getSelectBaseType se
   ie@(InsertE {}) -> fail $ "getBaseType: Insert Expressions must have a type: " <> show ie
+  (LiveSelectE {}) -> return []
   a -> fail $ "getBaseType: undefined: " <> show a
 
 -- | converts `TypeDef` to TH type definition AST
