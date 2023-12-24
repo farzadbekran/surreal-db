@@ -1135,6 +1135,16 @@ instance ToQL Define where
              Nothing -> ""
          ]
 
+data Throw
+  = Throw Exp
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL Throw where
+  toQL (Throw e) = "THROW " <> toQL e
+
+instance HasInput Throw where
+  getInputs (Throw e) = getInputs e
+
 data Statement
   = UseS USE
   | LetS Param Exp
@@ -1145,6 +1155,7 @@ data Statement
   | ContinueS
   | ForS Param Exp Block
   | DefineS Define
+  | ThrowS Throw
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Statement where
@@ -1161,11 +1172,13 @@ instance ToQL Statement where
     ContinueS -> "CONTINUE"
     ForS p e b -> "FOR " <> toQL p <> " IN " <> toQL e <> " {" <> toQL b <> "}"
     DefineS d -> toQL d
+    ThrowS t -> toQL t
 
 instance HasInput Statement where
   getInputs = \case
     LetS _ e -> getInputs e
     ForS _ e b -> getInputs e <> getInputs b
+    ThrowS t -> getInputs t
     _ -> []
 
 data SurQLLine

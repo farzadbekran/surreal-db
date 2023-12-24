@@ -49,8 +49,7 @@ test = do
             where name = %name :: Text && fname = %fname :: Int64
             limit 2
             fetch cat;
-            select (10 / 0) as aaa :: Int from artist limit 1; -- force an error!
-            --throw "asdasd";
+            throw "asdasd";
             select 1 + 2 as ppp :: Int from artist limit 1;
             |]
   putStr t

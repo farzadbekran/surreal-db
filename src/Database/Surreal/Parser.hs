@@ -1140,6 +1140,11 @@ defineS = label "defineS" $ lexeme $
     , defIndex
     ])
 
+throwS :: Parser Statement
+throwS = label "ThrowS" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "THROW"
+  ThrowS . Throw <$> exp
+
 statement :: Parser Statement
 statement =
   sc >> lexeme (choice $ map try
@@ -1158,6 +1163,7 @@ statement =
                 , caseInsensitiveSymbol "CONTINUNE" $> ContinueS
                 , forS
                 , defineS
+                , throwS
                 ])
 
 expLine :: Parser SurQLLine
