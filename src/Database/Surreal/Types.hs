@@ -11,9 +11,10 @@
 
 module Database.Surreal.Types where
 
-import           ClassyPrelude hiding ( error, id )
-import           Control.Monad ( MonadFail )
-import           Data.Aeson    as J
+import           ClassyPrelude   hiding ( error, id )
+import           Control.Monad   ( MonadFail )
+import           Data.Aeson      as J
+import           Data.Profunctor
 
 class MonadFail m => MonadSurreal m where
   getNextRequestID :: m Int
@@ -68,6 +69,10 @@ defaultConnectionInfo = ConnectionInfo "0.0.0.0" 8000 "root" "root" "test" "test
 -- | The type used by TH to parse SurrealQL
 data Query input output
   = Query Text (input -> Value) (Value -> output)
+
+instance Profunctor Query where
+  dimap :: (a -> b) -> (c -> d) -> Query b c -> Query a d
+  dimap ab cd (Query t b c) = Query t (b . ab) (cd . c)
 
 newtype DecodeError
   = DecodeError String

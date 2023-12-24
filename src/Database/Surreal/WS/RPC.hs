@@ -9,12 +9,11 @@
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeSynonymInstances       #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Database.Surreal.WS.RPC where
 
-import           ClassyPrelude                hiding (throwTo, error, id )
+import           ClassyPrelude                hiding ( error, id, throwTo )
 import           Control.Concurrent           ( ThreadId, forkIO, myThreadId,
                                                 threadDelay, throwTo )
 import           Control.Exception            ( throw )
@@ -185,11 +184,11 @@ runQueryRPC input (Query q encoder decoder) = do
         $ "runQuery: Unexpected status: "
         <> case s of
              Just (String err) -> unpack err
-             a -> show $ fromMaybe "<NO STATUS MESSAGE>" a
+             a                 -> show $ fromMaybe "<NO STATUS MESSAGE>" a
         <> ". "
         <> case o AKM.!? "result" of
              Just (String msg) -> unpack msg
-             a -> show $ fromMaybe "<NO ERROR MESSAGE>" a
+             a                 -> show $ fromMaybe "<NO ERROR MESSAGE>" a
     checkForErrorsAndExtractResults v = throw $ DecodeError
       $ "runQuery: Unexpected result format: expecting object but got: "
       <> pack (show v)

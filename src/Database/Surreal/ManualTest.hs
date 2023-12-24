@@ -12,13 +12,14 @@
 
 module Database.Surreal.ManualTest where
 
-import           ClassyPrelude                as P
+import           ClassyPrelude         as P
+import           Data.Profunctor
 import           Data.Row
-import           Data.Row.Aeson               ()
+import           Data.Row.Aeson        ()
 import           Database.Surreal.Core
-import           Database.Surreal.WS.RPC
 
-newtype MyAppState = MyAppState { someOtherState :: Text }
+newtype MyAppState
+  = MyAppState { someOtherState :: Text }
 
 type MyApp a
   = ReaderT MyAppState (SurrealRPCT IO) a
@@ -40,7 +41,7 @@ type TestRecType = Rec ("category" .== Text)
 type TestRecType2 = Rec ("id" .== RecordID .+ "cat" .== Vector TestRecType)
 type TestRecType3 = Rec ("id" .== RecordID .+ "name" .== Text .+ "fname" .== Maybe Text)
 
-test :: MyApp [Rec ("ppp" .== Int)]
+test :: MyApp [Int]
 test = do
   let q@(Query t _ _) =
         [sql|
@@ -49,11 +50,14 @@ test = do
             where name = %name :: Text && fname = %fname :: Int64
             limit 2
             fetch cat;
-            throw "asdasd";
+            -- throw "asdasd";
             select 1 + 2 as ppp :: Int from artist limit 1;
             |]
+      q2 = lmap (\(txt, i) -> #name .== txt .+ #fname .== i) q
+      q3 = rmap (\(r :: Either DecodeError [Rec ("ppp" .== Int)]) -> map (.! #ppp) <$> r) q2
   putStr t
-  runQuery (#name .== "my-name" .+ #fname .== 123) q
+  --runQuery (#name .== "my-name" .+ #fname .== 123) q
+  runQuery ("my-name", 123) q3
 
 -- test2 :: IO ()
 -- test2 = do
