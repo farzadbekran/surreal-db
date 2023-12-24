@@ -14,9 +14,9 @@
 
 module Database.Surreal.WS.RPC where
 
-import           ClassyPrelude                hiding ( error, id )
+import           ClassyPrelude                hiding (throwTo, error, id )
 import           Control.Concurrent           ( ThreadId, forkIO, myThreadId,
-                                                threadDelay )
+                                                threadDelay, throwTo )
 import           Control.Exception            ( throw )
 import           Control.Monad.Fail
 import           Control.Monad.Trans          ( MonadTrans )
@@ -108,7 +108,11 @@ connectRPC ConnectionInfo { .. } = do
   connMVar <- newEmptyMVar
   threadIDMVar <- newEmptyMVar
   respTVar <- newTVarIO M.empty
-  _ <- liftIO $ forkIO $ withSocketsDo $ WS.runClient url port "/rpc" (rpcApp connMVar threadIDMVar respTVar)
+  parentThreadID <- liftIO myThreadId
+  _ <- liftIO $ forkIO
+    $ catchAny
+    (withSocketsDo $ WS.runClient url port "/rpc" (rpcApp connMVar threadIDMVar respTVar))
+    (throwTo parentThreadID)
   conn <- readMVar connMVar
   tid <- readMVar threadIDMVar
   reqIDTvar <- newTVarIO 0
@@ -178,7 +182,14 @@ runQueryRPC input (Query q encoder decoder) = do
         Nothing -> throw $ DecodeError
           $ "runQuery: missing 'result' key in result map: " <> show o
       s -> throw $ DecodeError
-        $ "runQuery: Unexpected status: " <> show s
+        $ "runQuery: Unexpected status: "
+        <> case s of
+             Just (String err) -> unpack err
+             a -> show $ fromMaybe "<NO STATUS MESSAGE>" a
+        <> ". "
+        <> case o AKM.!? "result" of
+             Just (String msg) -> unpack msg
+             a -> show $ fromMaybe "<NO ERROR MESSAGE>" a
     checkForErrorsAndExtractResults v = throw $ DecodeError
       $ "runQuery: Unexpected result format: expecting object but got: "
       <> pack (show v)

@@ -29,11 +29,18 @@ runMyApp m = do
   let appState = MyAppState "some other state"
   runSurrealRPCT cs (runReaderT m appState)
 
+main :: IO ()
+main = catch
+  (do
+      r <- runMyApp test
+      print r)
+  (\(e :: SomeException) -> putStrLn $ "cought exception: " <> pack (displayException e))
+
 type TestRecType = Rec ("category" .== Text)
 type TestRecType2 = Rec ("id" .== RecordID .+ "cat" .== Vector TestRecType)
 type TestRecType3 = Rec ("id" .== RecordID .+ "name" .== Text .+ "fname" .== Maybe Text)
 
-test :: MyApp ()
+test :: MyApp [Rec ("ppp" .== Int)]
 test = do
   let q@(Query t _ _) =
         [sql|
@@ -42,11 +49,12 @@ test = do
             where name = %name :: Text && fname = %fname :: Int64
             limit 2
             fetch cat;
+            select (10 / 0) as aaa :: Int from artist limit 1; -- force an error!
+            --throw "asdasd";
             select 1 + 2 as ppp :: Int from artist limit 1;
             |]
   putStr t
-  res <- runQuery (#name .== "my-name" .+ #fname .== 123) q
-  print res
+  runQuery (#name .== "my-name" .+ #fname .== 123) q
 
 -- test2 :: IO ()
 -- test2 = do
