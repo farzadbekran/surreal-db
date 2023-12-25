@@ -1186,6 +1186,18 @@ throwS = label "ThrowS" $ lexeme $ do
   _ <- caseInsensitiveSymbol "THROW"
   ThrowS . Throw <$> exp
 
+killParam :: Parser KillParam
+killParam = label "killParam" $ lexeme $ do
+  choice $ map try
+    [ KPUUID <$> quotedText
+    , KPParam <$> param
+    ]
+
+killS :: Parser Statement
+killS = label "killS" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "KILL"
+  KillS <$> killParam
+
 statement :: Parser Statement
 statement =
   sc >> lexeme (choice $ map try
@@ -1205,6 +1217,7 @@ statement =
                 , forS
                 , defineS
                 , throwS
+                , killS
                 ])
 
 expLine :: Parser SurQLLine

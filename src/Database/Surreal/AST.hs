@@ -735,6 +735,19 @@ instance HasInput DIFF where
 data InfoParam = IPRoot | IPNS | IPDB | IPScope ScopeName | IPTable TableName
   deriving (Eq, Generic, Read, Show)
 
+data KillParam = KPUUID Text | KPParam Param
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL KillParam where
+  toQL = \case
+    KPUUID t -> "\"" <> t <> "\""
+    KPParam p -> toQL p
+
+instance HasInput KillParam where
+  getInputs = \case
+    KPUUID _ -> []
+    KPParam p -> getInputs p
+
 instance ToQL InfoParam where
   toQL = \case
     IPRoot -> "ROOT"
@@ -1206,6 +1219,7 @@ data Statement
   | ForS Param Exp Block
   | DefineS Define
   | ThrowS Throw
+  | KillS KillParam
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Statement where
@@ -1223,12 +1237,14 @@ instance ToQL Statement where
     ForS p e b -> "FOR " <> toQL p <> " IN " <> toQL e <> " {" <> toQL b <> "}"
     DefineS d -> toQL d
     ThrowS t -> toQL t
+    KillS kp -> "KILL " <> toQL kp
 
 instance HasInput Statement where
   getInputs = \case
     LetS _ e -> getInputs e
     ForS _ e b -> getInputs e <> getInputs b
     ThrowS t -> getInputs t
+    KillS kp -> getInputs kp
     _ -> []
 
 data SurQLLine
