@@ -51,6 +51,7 @@ library
     , bytestring
     , classy-prelude
     , containers
+    , exceptions
     , first-class-families
     , iso8601-time
     , megaparsec
@@ -87,6 +88,7 @@ test-suite surreal-db-test
     , bytestring
     , classy-prelude
     , containers
+    , exceptions
     , first-class-families
     , iso8601-time
     , megaparsec

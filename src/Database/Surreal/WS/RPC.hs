@@ -17,6 +17,7 @@ import           ClassyPrelude                hiding ( error, id, throwTo )
 import           Control.Concurrent           ( ThreadId, forkIO, myThreadId,
                                                 threadDelay, throwTo )
 import           Control.Exception            ( throw )
+import           Control.Monad.Catch          hiding ( try )
 import           Control.Monad.Fail
 import           Control.Monad.Trans          ( MonadTrans )
 import           Data.Aeson                   ( Value (..), decode, encode,
@@ -35,7 +36,7 @@ newtype SurrealRPC a
     ( Applicative
     , Functor
     , Monad
-    , MonadFail
+    , MonadThrow
     , MonadIO
     , MonadReader RPCConnectionState
     , MonadUnliftIO
@@ -61,13 +62,13 @@ newtype SurrealRPCT m a
     ( Applicative
     , Functor
     , Monad
-    , MonadFail
+    , MonadThrow
     , MonadIO
     , MonadReader RPCConnectionState
     , MonadUnliftIO
     )
 
-instance (MonadFail m, MonadUnliftIO m) => MonadSurreal (SurrealRPCT m) where
+instance (MonadThrow m, MonadUnliftIO m, MonadThrow (SurrealRPCT m)) => MonadSurreal (SurrealRPCT m) where
   getNextRequestID = do
     cs <- ask
     liftIO $ runReaderT getNextRequestIDRPC cs
@@ -80,8 +81,9 @@ instance (MonadFail m, MonadUnliftIO m) => MonadSurreal (SurrealRPCT m) where
 
 instance ( MonadUnliftIO m
          , MonadTrans t
-         , MonadFail (t (SurrealRPCT m))
-         , MonadFail m) =>
+         , MonadThrow (t (SurrealRPCT m))
+         , MonadThrow (SurrealRPCT m)
+         , MonadThrow m) =>
          MonadSurreal (t (SurrealRPCT m)) where
   getNextRequestID = lift getNextRequestID
   send t vs = lift $ send t vs
@@ -191,7 +193,7 @@ runQueryRPC input (Query q encoder decoder) = do
         results <- mapM checkForErrorsAndExtractResults arr
         case decoder $ fromMaybe Null (lastMay results) of
           Right r -> return r
-          Left e  -> fail $ show e
+          Left e  -> throw e
       v -> throw $ DecodeError
         $ "runQuery: Unexpected result format: expecting array but got: "
         <> pack (show v)

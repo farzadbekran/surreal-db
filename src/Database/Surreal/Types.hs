@@ -1,22 +1,18 @@
-{-# LANGUAGE DefaultSignatures     #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE InstanceSigs          #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE TypeOperators         #-}
 
 module Database.Surreal.Types where
 
-import           ClassyPrelude   hiding ( error, id )
-import           Control.Monad   ( MonadFail )
-import           Data.Aeson      as J
+import           ClassyPrelude       hiding ( error, id )
+import           Control.Monad.Catch
+import           Data.Aeson          as J
 import           Data.Profunctor
 
-class MonadFail m => MonadSurreal m where
+class MonadThrow m => MonadSurreal m where
   getNextRequestID :: m Int
   send :: Text -> [Value] -> m Response
   runQuery :: input -> Query input (Either DecodeError output) -> m output
@@ -50,7 +46,8 @@ data LiveResponse
       }
   deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
 
-newtype LiveNotification = LiveNotification { result :: LiveResponse }
+newtype LiveNotification
+  = LiveNotification { result :: LiveResponse }
   deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
 
 data SurrealError

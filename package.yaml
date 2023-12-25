@@ -41,6 +41,7 @@ dependencies:
 - template-haskell
 - profunctors
 - vector
+- exceptions
 
 ghc-options:
 - -Wall
