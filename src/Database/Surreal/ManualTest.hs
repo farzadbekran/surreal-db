@@ -43,7 +43,7 @@ type TestRecType3 = Rec ("id" .== RecordID .+ "name" .== Text .+ "fname" .== May
 
 test :: MyApp [Int]
 test = do
-  let q@(Query t _ _) =
+  let q =
         [sql|
             select id :: Text, ->create->product AS cat :: (Vector TestRecType)
             from artist:00b2pg847d7b8r08t08t..
@@ -56,7 +56,7 @@ test = do
             |]
       q2 = lmap (\(txt, i) -> #name .== txt .+ #fname .== i) q
       q3 = rmap (\r -> map (.! #ppp) <$> r) q2
-  putStr t
+  putStr (getSQL q)
   --runQuery (#name .== "my-name" .+ #fname .== 123) q
   runQuery ("my-name", 123) q3
 

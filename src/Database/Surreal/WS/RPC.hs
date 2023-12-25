@@ -13,22 +13,23 @@
 
 module Database.Surreal.WS.RPC where
 
-import           ClassyPrelude                hiding ( error, id, throwTo )
-import           Control.Concurrent           ( ThreadId, forkIO, myThreadId,
-                                                threadDelay, throwTo )
-import           Control.Exception            ( throw )
-import           Control.Monad.Catch          hiding ( try )
-import           Control.Monad.Fail
-import           Control.Monad.Trans          ( MonadTrans )
-import           Data.Aeson                   ( Value (..), decode, encode,
-                                                object, (.=) )
-import qualified Data.Aeson.KeyMap            as AKM
-import qualified Data.ByteString.Lazy         as BL
-import           Data.Map.Strict              as M
+import           ClassyPrelude                 hiding ( error, id, throwTo )
+import           Control.Concurrent            ( ThreadId, forkIO, myThreadId,
+                                                 threadDelay, throwTo )
+import           Control.Exception             ( throw )
+import           Control.Monad.Catch           hiding ( try )
+import           Control.Monad.Trans           ( MonadTrans )
+import           Data.Aeson                    ( Value (..), decode, encode,
+                                                 object, (.=) )
+import qualified Data.Aeson.KeyMap             as AKM
+import qualified Data.ByteString.Lazy          as BL
+import           Data.Map.Strict               as M
+import           Database.Surreal.MonadSurreal
 import           Database.Surreal.Types
 import           Database.Surreal.WS.RPCTypes
-import           Network.Socket               ( withSocketsDo )
-import qualified Network.WebSockets           as WS
+import           Network.Socket                ( withSocketsDo )
+import qualified Network.WebSockets            as WS
+import Database.Surreal.TH
 
 newtype SurrealRPC a
   = SurrealRPC { unSurrealRPC :: ReaderT RPCConnectionState IO a }
@@ -36,9 +37,9 @@ newtype SurrealRPC a
     ( Applicative
     , Functor
     , Monad
-    , MonadThrow
     , MonadIO
     , MonadReader RPCConnectionState
+    , MonadThrow
     , MonadUnliftIO
     )
 
@@ -62,9 +63,9 @@ newtype SurrealRPCT m a
     ( Applicative
     , Functor
     , Monad
-    , MonadThrow
     , MonadIO
     , MonadReader RPCConnectionState
+    , MonadThrow
     , MonadUnliftIO
     )
 
@@ -183,15 +184,15 @@ sendRPC method params = do
     Left e  -> throw e
 
 runQueryRPC :: MonadSurreal m => input -> Query input (Either DecodeError output) -> m output
-runQueryRPC input (Query q encoder decoder) = do
-  let encodedInput = encoder input
-  Response { result = result, error = err } <- send "query" [String q, encodedInput]
+runQueryRPC input q = do
+  let encodedInput = getEncoder q input
+  Response { result = result, error = err } <- send "query" [String (getSQL q), encodedInput]
   case err of
     Just e  -> throw e
     Nothing -> case result of
       Just (Array arr) -> do
         results <- mapM checkForErrorsAndExtractResults arr
-        case decoder $ fromMaybe Null (lastMay results) of
+        case getDecoder q $ fromMaybe Null (lastMay results) of
           Right r -> return r
           Left e  -> throw e
       v -> throw $ DecodeError

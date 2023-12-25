@@ -11,11 +11,18 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeOperators         #-}
 
-module Database.Surreal.TH where
+module Database.Surreal.TH
+    ( Query
+    , getDecoder
+    , getEncoder
+    , getSQL
+    , sql
+    ) where
 
 import           ClassyPrelude                as P hiding ( exp, lift )
 import           Control.Monad.Fail
 import           Data.Aeson                   as Aeson
+import           Data.Profunctor
 import           Data.Row.Records
 import           Database.Surreal.AST         ( HasInput (getInputs) )
 import qualified Database.Surreal.AST         as AST
@@ -27,12 +34,22 @@ import           Language.Haskell.TH.Quote
 import           Language.Haskell.TH.Syntax
 import           Text.Megaparsec              hiding ( Label )
 
--- reEncode :: (i2 -> i) -> Query i o -> Query i2 o
--- reEncode f (Query t ie od)  = Query t (ie . f) od
+-- | The type used by TH to parse SurrealQL
+data Query input output
+  = Query Text (input -> Value) (Value -> output)
 
--- reDecode :: (o -> Surreal o2) -> Query i o -> Query i o2
--- reDecode f (Query t ie od)
---   = Query t ie (od >=> f)
+getSQL :: Query input output -> Text
+getSQL (Query t _ _) = t
+
+getEncoder :: Query input output -> (input -> Value)
+getEncoder (Query _ encoder _) = encoder
+
+getDecoder :: Query input output -> (Value -> output)
+getDecoder (Query _ _ decoder) = decoder
+
+instance Profunctor Query where
+  dimap :: (a -> b) -> (c -> d) -> Query b c -> Query a d
+  dimap ab cd (Query t b c) = Query t (b . ab) (cd . c)
 
 sql :: QuasiQuoter
 sql = QuasiQuoter
