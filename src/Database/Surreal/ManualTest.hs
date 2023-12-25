@@ -57,9 +57,8 @@ test = do
             info for root;
             info for scope my_scope;
             info for table my_table;
-            kill "21212";
-            kill $pp;
-            -- kill %ppp :: Text;
+            --kill $qid;
+            remove event my_event on table my_table;
             select 1 + 2 as ppp :: Int from artist limit 1;
             |]
       q2 = lmap (\(txt, i) -> #name .== txt .+ #fname .== i) q

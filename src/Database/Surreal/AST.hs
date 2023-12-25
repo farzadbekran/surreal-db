@@ -95,6 +95,7 @@ type TokenValue = Text
 type EventName = Text
 type FieldName = Text
 type TypeName = Text
+type ParamName = Text
 type AnalyzerName = Text
 type LanguageName = Text
 type IndexName = Text
@@ -125,8 +126,8 @@ data USE
   deriving (Eq, Generic, Read, Show)
 
 data Param
-  = SQLParam Text
-  | InputParam Text TypeDef
+  = SQLParam ParamName
+  | InputParam ParamName TypeDef
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Param where
@@ -450,7 +451,7 @@ instance ToQL Duration where
 defaultDuration :: Duration
 defaultDuration = Duration 0 0 0 0 0 0 0 0 0
 
-data TableName
+newtype TableName
   = TableName Text
   deriving (Eq, Generic, Read, Show)
 
@@ -735,19 +736,6 @@ instance HasInput DIFF where
 data InfoParam = IPRoot | IPNS | IPDB | IPScope ScopeName | IPTable TableName
   deriving (Eq, Generic, Read, Show)
 
-data KillParam = KPUUID Text | KPParam Param
-  deriving (Eq, Generic, Read, Show)
-
-instance ToQL KillParam where
-  toQL = \case
-    KPUUID t -> "\"" <> t <> "\""
-    KPParam p -> toQL p
-
-instance HasInput KillParam where
-  getInputs = \case
-    KPUUID _ -> []
-    KPParam p -> getInputs p
-
 instance ToQL InfoParam where
   toQL = \case
     IPRoot -> "ROOT"
@@ -915,6 +903,14 @@ instance ToQL UserScope where
     USROOT -> "ON ROOT"
     USNS -> "ON NAMESPACE"
     USDB -> "ON DATABASE"
+
+data NSDBScope = NSDBScopeNS | NSDBScopeDB
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL NSDBScope where
+  toQL = \case
+    NSDBScopeNS -> "NAMESPACE"
+    NSDBScopeDB -> "DATABASE"
 
 data UserPassword
   = PASSWORD Text
@@ -1198,15 +1194,48 @@ instance ToQL Define where
              Nothing -> ""
          ]
 
-newtype Throw
-  = Throw Exp
+data Remove
+  = RMNS Namespace
+  | RMDB Database
+  | RMUser UserName UserScope
+  | RMLogin Text NSDBScope
+  | RMToken TokenName NSDBScope
+  | RMScope ScopeName
+  | RMTable TableName
+  | RMEvent EventName TableName
+  | RMFN FNName
+  | RMField FieldName TableName
+  | RMIndex IndexName TableName
+  | RMParam ParamName
   deriving (Eq, Generic, Read, Show)
 
-instance ToQL Throw where
-  toQL (Throw e) = "THROW " <> toQL e
+instance ToQL Remove where
+  toQL = \case
+    RMNS ns -> "NAMESPACE " <> toQL ns
+    RMDB db -> "DATABASE " <> toQL db
+    RMUser un scope -> "USER " <> toQL un <> " ON " <> toQL scope
+    RMLogin t scope -> "LOGIN " <> t <> " ON " <> toQL scope
+    RMToken tn scope -> "TOKEN " <> tn <> " ON " <> toQL scope
+    RMScope sn -> "SCOPE " <> sn
+    RMTable tn -> "TABLE " <> toQL tn
+    RMEvent en tn -> "EVENT " <> en <> " ON TABLE " <> toQL tn
+    RMFN (FNName fn) -> "FUNCTION " <> fn
+    RMField fn tn -> "FIELD " <> fn <> " ON TABLE " <> toQL tn
+    RMIndex indx tn -> "INDEX " <> indx <> " ON TABLE " <> toQL tn
+    RMParam p -> "PARAM " <> toQL p
 
-instance HasInput Throw where
-  getInputs (Throw e) = getInputs e
+data KillParam = KPUUID Text | KPParam Param
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL KillParam where
+  toQL = \case
+    KPUUID t -> "\"" <> t <> "\""
+    KPParam p -> toQL p
+
+instance HasInput KillParam where
+  getInputs = \case
+    KPUUID _ -> []
+    KPParam p -> getInputs p
 
 data Statement
   = UseS USE
@@ -1218,7 +1247,8 @@ data Statement
   | ContinueS
   | ForS Param Exp Block
   | DefineS Define
-  | ThrowS Throw
+  | RemoveS Remove
+  | ThrowS Exp
   | KillS KillParam
   deriving (Eq, Generic, Read, Show)
 
@@ -1236,15 +1266,15 @@ instance ToQL Statement where
     ContinueS -> "CONTINUE"
     ForS p e b -> "FOR " <> toQL p <> " IN " <> toQL e <> " {" <> toQL b <> "}"
     DefineS d -> toQL d
-    ThrowS t -> toQL t
+    ThrowS e -> "THROW " <> toQL e
     KillS kp -> "KILL " <> toQL kp
+    RemoveS r -> "REMOVE " <> toQL r
 
 instance HasInput Statement where
   getInputs = \case
     LetS _ e -> getInputs e
     ForS _ e b -> getInputs e <> getInputs b
     ThrowS t -> getInputs t
-    KillS kp -> getInputs kp
     _ -> []
 
 data SurQLLine

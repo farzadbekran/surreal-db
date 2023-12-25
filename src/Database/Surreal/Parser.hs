@@ -594,7 +594,7 @@ liveSelectE = label "LiveSelectE" $ lexeme $ do
     case (ss,diff) of
       (Just s, Nothing) -> return $ Right s
       (Nothing, Just _) -> return $ Left DIFF
-      _ -> fail "failed to parse selectors for live select!"
+      _                 -> fail "failed to parse selectors for live select!"
   from_ <- from
   mWhere <- optional where_
   mFetch <- optional fetch
@@ -1184,7 +1184,7 @@ defineS = label "defineS" $ lexeme $
 throwS :: Parser Statement
 throwS = label "ThrowS" $ lexeme $ do
   _ <- caseInsensitiveSymbol "THROW"
-  ThrowS . Throw <$> exp
+  ThrowS <$> exp
 
 killParam :: Parser KillParam
 killParam = label "killParam" $ lexeme $ do
@@ -1197,6 +1197,46 @@ killS :: Parser Statement
 killS = label "killS" $ lexeme $ do
   _ <- caseInsensitiveSymbol "KILL"
   KillS <$> killParam
+
+nsdbScope :: Parser NSDBScope
+nsdbScope = label "nsdbScope" $ lexeme $ choice $ map try
+  [ caseInsensitiveSymbol "NAMESPACE" $> NSDBScopeNS
+  , caseInsensitiveSymbol "DATABASE" $> NSDBScopeDB
+  ]
+
+removeParam :: Parser Remove
+removeParam = label "removeParam" $ lexeme $ do
+  choice $ map try
+    [ caseInsensitiveSymbol "NAMESPACE" >> identifierWord <&> RMNS
+    , caseInsensitiveSymbol "DATABASE" >> identifierWord <&> RMDB
+    , caseInsensitiveSymbol "USER" >> RMUser <$> identifierWord <*> (caseInsensitiveSymbol "ON" >> userScope)
+    , caseInsensitiveSymbol "LOGIN" >> RMLogin <$> identifierWord <*> (caseInsensitiveSymbol "ON" >> nsdbScope)
+    , caseInsensitiveSymbol "TOKEN" >> RMToken <$> identifierWord <*> (caseInsensitiveSymbol "ON" >> nsdbScope)
+    , caseInsensitiveSymbol "SCOPE" >> RMScope <$> identifierWord
+    , caseInsensitiveSymbol "TABLE" >> RMTable <$> tableName
+    , caseInsensitiveSymbol "EVENT" >> RMEvent <$> identifierWord
+      <*> (do
+              _ <- caseInsensitiveSymbol "ON"
+              _ <- optional $ caseInsensitiveSymbol "TABLE"
+              tableName)
+    , caseInsensitiveSymbol "FUNCTION" >> RMFN <$> fnName
+    , caseInsensitiveSymbol "FIELD" >> RMField <$> identifierWord
+      <*> (do
+              _ <- caseInsensitiveSymbol "ON"
+              _ <- optional $ caseInsensitiveSymbol "TABLE"
+              tableName)
+    , caseInsensitiveSymbol "INDEX" >> RMIndex <$> identifierWord
+      <*> (do
+              _ <- caseInsensitiveSymbol "ON"
+              _ <- optional $ caseInsensitiveSymbol "TABLE"
+              tableName)
+    , caseInsensitiveSymbol "PARAM" >> RMParam <$> (char '$' >> identifierWord)
+    ]
+
+removeS :: Parser Statement
+removeS = label "removeS" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "REMOVE"
+  RemoveS <$> removeParam
 
 statement :: Parser Statement
 statement =
@@ -1218,6 +1258,7 @@ statement =
                 , defineS
                 , throwS
                 , killS
+                , removeS
                 ])
 
 expLine :: Parser SurQLLine
