@@ -561,6 +561,9 @@ explain = label "EXPLAIN" $ lexeme $ do
 tableName :: Parser TableName
 tableName = label "TableName" $ lexeme $ TableName <$> identifierWord
 
+scopeName :: Parser ScopeName
+scopeName = label "ScopeName" $ lexeme identifierWord
+
 selectE :: Parser Exp
 selectE = label "SelectE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "SELECT"
@@ -614,6 +617,9 @@ insertValues = label "insertValues" $ lexeme $ do
   fs <- lexeme $ betweenParens $ sepBy field (lexeme $ char ',')
   _ <- caseInsensitiveSymbol "VALUES"
   vs <- sepBy tupleParser (lexeme $ char ',')
+  let fieldsLength = length fs
+  unless (all (\item -> length item == fieldsLength) vs)
+    (fail "Length of inserted values don't match the field count!")
   mOnDuplicate <- optional onDuplicate
   return $ InsertValues fs vs mOnDuplicate
   where
@@ -789,6 +795,22 @@ returnE = label "returnE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "RETURN"
   ReturnE <$> exp
 
+infoParam :: Parser InfoParam
+infoParam = label "infoParam" $ lexeme $ do
+  choice $ map try
+    [ caseInsensitiveSymbol "ROOT" $> IPRoot
+    , (caseInsensitiveSymbol "NS" <|> caseInsensitiveSymbol "NAMESPACE") $> IPNS
+    , (caseInsensitiveSymbol "DB" <|> caseInsensitiveSymbol "DATABASE") $> IPDB
+    , (caseInsensitiveSymbol "TABLE" >> tableName) <&> IPTable
+    , (caseInsensitiveSymbol "SCOPE" >> scopeName) <&> IPScope
+    ]
+
+infoE :: Parser Exp
+infoE = label "infoE" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "INFO"
+  _ <- caseInsensitiveSymbol "FOR"
+  InfoE <$> infoParam
+
 -- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
 operatorTable = [ [ E.Postfix typedExp
@@ -853,6 +875,7 @@ term = sc
               , relateE
               , deleteE
               , returnE
+              , infoE
               , WhereE <$> where_
               , appE
               , edgeSelectorE

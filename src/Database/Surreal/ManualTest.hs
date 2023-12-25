@@ -52,6 +52,11 @@ test = do
             fetch cat;
             -- throw "asdasd";
             live select * from artist;
+            info for ns;
+            info for db;
+            info for root;
+            info for scope my_scope;
+            info for table my_table;
             select 1 + 2 as ppp :: Int from artist limit 1;
             |]
       q2 = lmap (\(txt, i) -> #name .== txt .+ #fname .== i) q

@@ -732,6 +732,17 @@ instance ToQL DIFF where
 instance HasInput DIFF where
   getInputs _ = []
 
+data InfoParam = IPRoot | IPNS | IPDB | IPScope ScopeName | IPTable TableName
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL InfoParam where
+  toQL = \case
+    IPRoot -> "ROOT"
+    IPNS -> "NS"
+    IPDB -> "DB"
+    IPScope sn -> "SCOPE " <> toQL sn
+    IPTable tn -> "TABLE " <> toQL tn
+
 data Exp
   = TypedE Exp TypeDef
   | OPE Operator Exp Exp
@@ -751,6 +762,7 @@ data Exp
   | WhereE WHERE -- ^ needed this to support table permissions
   | ReturnE Exp
   | InParenE Exp
+  | InfoE InfoParam
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Exp where
@@ -840,6 +852,7 @@ instance ToQL Exp where
     WhereE w -> toQL w
     ReturnE e -> "RETURN " <> toQL e
     InParenE e -> "(" <> toQL e <> ")"
+    InfoE ip -> "INFO FOR " <> toQL ip
 
 instance HasInput Exp where
   getInputs = \case
@@ -879,6 +892,7 @@ instance HasInput Exp where
     WhereE w -> getInputs w
     ReturnE e -> getInputs e
     InParenE e -> getInputs e
+    InfoE _ -> []
 
 data UserScope = USROOT | USNS | USDB
   deriving (Eq, Generic, Read, Show)

@@ -81,7 +81,9 @@ getExpResultDecoder e = do
     AST.LiveSelectE {} -> [| (\r -> case fromJSON @($(return t)) r of
                                  Aeson.Success r2 -> Right r2
                                  Aeson.Error err  -> Left $ DecodeError err) |]
-    _ -> fail "unimplemented decoder!"
+    _ -> [| (\r -> case fromJSON @Value r of
+                Aeson.Success r2 -> Right r2
+                Aeson.Error err  -> Left $ DecodeError err) |]
 
 getLineResultDecoder :: AST.SurQLLine -> Q Exp
 getLineResultDecoder = \case
