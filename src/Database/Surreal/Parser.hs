@@ -1260,6 +1260,11 @@ removeS = label "removeS" $ lexeme $ do
   _ <- caseInsensitiveSymbol "REMOVE"
   RemoveS <$> removeParam
 
+sleepS :: Parser Statement
+sleepS = label "sleepS" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "SLEEP"
+  SleepS <$> durationParser
+
 statement :: Parser Statement
 statement =
   sc >> lexeme (choice $ map try
@@ -1281,6 +1286,7 @@ statement =
                 , throwS
                 , killS
                 , removeS
+                , sleepS
                 ])
 
 expLine :: Parser SurQLLine

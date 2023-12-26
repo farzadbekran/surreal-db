@@ -1277,6 +1277,7 @@ data Statement
   | RemoveS Remove
   | ThrowS Exp
   | KillS KillParam
+  | SleepS Duration
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Statement where
@@ -1296,6 +1297,7 @@ instance ToQL Statement where
     ThrowS e -> "THROW " <> toQL e
     KillS kp -> "KILL " <> toQL kp
     RemoveS r -> "REMOVE " <> toQL r
+    SleepS d -> "SLEEP " <> toQL d
 
 instance HasInput Statement where
   getInputs = \case
