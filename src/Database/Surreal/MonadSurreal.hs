@@ -7,7 +7,6 @@ module Database.Surreal.MonadSurreal where
 import           ClassyPrelude          hiding ( error, id )
 import           Control.Monad.Catch
 import           Data.Aeson             as J
-import           Data.Profunctor
 import           Database.Surreal.TH
 import           Database.Surreal.Types
 

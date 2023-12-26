@@ -6,6 +6,7 @@
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE NoImplicitPrelude     #-}
 {-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE TemplateHaskellQuotes #-}
 {-# LANGUAGE TypeApplications      #-}
 
 module Database.Surreal.TypeHandler where
@@ -20,12 +21,12 @@ import qualified Language.Haskell.TH  as TH
 getFieldLabel :: MonadFail m => Field -> m Text
 getFieldLabel = \case
   WildCardField -> fail "Can't determine field label for WildCardField '*'!"
-  SimpleField t -> return t
+  SimpleField t -> return $ toQL t
   IndexedField f _ -> getFieldLabel f
   FilteredField f _ -> getFieldLabel f
   FieldParam p -> case p of
-    SQLParam t     -> return t
-    InputParam t _ -> return t
+    SQLParam t     -> return $ toQL t
+    InputParam t _ -> return $ toQL t
   CompositeField f1 f2 -> do
     l1 <- getFieldLabel f1
     l2 <- getFieldLabel f2
@@ -139,7 +140,7 @@ getRowTypeFromInput = \case
   InputParam l t -> do
     let t' = mkType t
     return
-      $ TH.InfixT (TH.LitT (TH.StrTyLit $ unpack l)) ''(.==) t'
+      $ TH.InfixT (TH.LitT (TH.StrTyLit $ unpack $ toQL l)) ''(.==) t'
   a -> fail $ "getRowTypeFromInput: Can't make a row type without a label: " <> show a
 
 combineToRowType :: TH.Type -> TH.Type -> TH.Type
