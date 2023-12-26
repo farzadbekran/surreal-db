@@ -11,7 +11,6 @@ import           ClassyPrelude                  hiding ( bool, exp, group,
                                                   try )
 import qualified Control.Monad.Combinators.Expr as E
 import           Control.Monad.Fail             ( MonadFail (..) )
-import           Data.Char                      ( isSpace, isAlphaNum )
 import           Data.Foldable                  ( foldl )
 import           Data.Time.ISO8601              ( parseISO8601 )
 import           Data.Void
@@ -301,7 +300,7 @@ wildCardField :: Parser Field
 wildCardField = label "wildCardField" $ lexeme $ symbol "*" $> WildCardField
 
 simpleField :: Parser Field
-simpleField = label "SimpleField" $ lexeme $ SimpleField <$> identifier
+simpleField = label "SimpleField" $ lexeme $ SimpleField . FieldName <$> identifier
 
 indexedField :: Parser (Field -> Field)
 indexedField = label "IndexedField" $ lexeme $ do
@@ -360,10 +359,10 @@ constE = label "ConstE" $ lexeme $ ConstE <$> identifier
 param :: Parser Param
 param = label "Param" $ lexeme $ choice
   [ do _ <- char '$'
-       SQLParam <$> identifier
+       SQLParam . ParamName <$> identifier
   , maybeBetweenParens $ do
       _ <- char '%'
-      n <- identifier
+      n <- ParamName <$> identifier
       _ <- lexeme $ symbol "::"
       InputParam n <$> parseType
   ]
@@ -469,7 +468,7 @@ index :: Parser INDEX
 index = label "INDEX" $ lexeme $ noindex <|> indexes
   where
     noindex = caseInsensitiveSymbol "NOINDEX" $> NOINDEX
-    indexes = INDEX <$> sepBy identifier (char ',')
+    indexes = INDEX <$> sepBy (IndexName <$> identifier) (char ',')
 
 with :: Parser WITH
 with = label "WITH" $ lexeme $ do
@@ -554,10 +553,10 @@ explain = label "EXPLAIN" $ lexeme $ do
   return $ if isJust mFull then EXPLAINFULL else EXPLAIN
 
 tableName :: Parser TableName
-tableName = label "TableName" $ lexeme identifier
+tableName = label "TableName" $ lexeme $ TableName <$> identifier
 
 scopeName :: Parser ScopeName
-scopeName = label "ScopeName" $ lexeme identifier
+scopeName = label "ScopeName" $ lexeme $ ScopeName <$> identifier
 
 selectE :: Parser Exp
 selectE = label "SelectE" $ lexeme $ do
@@ -902,21 +901,21 @@ useNSDB :: Parser Statement
 useNSDB = label "useNSDB" $ lexeme $ do
   _ <- caseInsensitiveSymbol "USE"
   _ <- caseInsensitiveSymbol "NS"
-  ns <- identifier
+  ns <- Namespace <$> identifier
   _ <- caseInsensitiveSymbol "DB"
-  UseS . USE ns <$> identifier
+  UseS . USE ns . Database <$> identifier
 
 useNS :: Parser Statement
 useNS = label "useNSDB" $ lexeme $ do
   _ <- caseInsensitiveSymbol "USE"
   _ <- caseInsensitiveSymbol "NS"
-  UseS . USE_NS <$> identifier
+  UseS . USE_NS . Namespace <$> identifier
 
 useDB :: Parser Statement
 useDB = label "useNSDB" $ lexeme $ do
   _ <- caseInsensitiveSymbol "USE"
   _ <- caseInsensitiveSymbol "DB"
-  UseS . USE_DB <$> identifier
+  UseS . USE_DB . Database <$> identifier
 
 useS :: Parser Statement
 useS = label "useS" $ lexeme $ choice $ map try
@@ -944,13 +943,13 @@ defNamespace :: Parser Define
 defNamespace = label "defNamespace" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "NAMESPACE"
-  DefNamespace <$> identifier
+  DefNamespace . Namespace <$> identifier
 
 defDatabase :: Parser Define
 defDatabase = label "defDatabase" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "DATABASE"
-  DefDatabase <$> identifier
+  DefDatabase . Database <$> identifier
 
 userScope :: Parser UserScope
 userScope = label "userScope" $ lexeme $ do
@@ -981,14 +980,14 @@ defUser = label "defUser" $ lexeme $ do
   scope <- userScope
   pass <- optional userPass
   roles <- optional $ caseInsensitiveSymbol "ROLES" >> sepBy userRole (lexeme $ char ',')
-  return $ DefUser un scope pass roles
+  return $ DefUser (UserName un) scope pass roles
 
 tokenScope :: Parser TokenScope
 tokenScope = label "tokenScope" $ lexeme $ do
   _ <- caseInsensitiveSymbol "ON"
   choice [ caseInsensitiveSymbol "NAMESPACE" $> TSNS
          , caseInsensitiveSymbol "DATABASE" $> TSDB
-         , caseInsensitiveSymbol "SCOPE" >> identifier <&> TSScope
+         , caseInsensitiveSymbol "SCOPE" >> (ScopeName <$> identifier) <&> TSScope
          ]
 
 tokenType :: Parser TokenType
@@ -1014,7 +1013,7 @@ defToken = label "defToken" $ lexeme $ do
   _ <- caseInsensitiveSymbol "TYPE"
   t <- tokenType
   _ <- caseInsensitiveSymbol "VALUE"
-  DefToken tn scope t <$> quotedText
+  DefToken (TokenName tn) scope t <$> quotedText
 
 defScope :: Parser Define
 defScope = label "defScope" $ lexeme $ do
@@ -1024,7 +1023,7 @@ defScope = label "defScope" $ lexeme $ do
   mDur <- optional $ caseInsensitiveSymbol "SESSION" >> durationParser
   mSignUp <- optional $ caseInsensitiveSymbol "SIGNUP" >> exp
   mSignIn <- optional $ caseInsensitiveSymbol "SIGNIN" >> exp
-  return $ DefScope sn mDur mSignUp mSignIn
+  return $ DefScope (ScopeName sn) mDur mSignUp mSignIn
 
 operationType :: Parser OperationType
 operationType = label "operationType" $ lexeme $ choice
@@ -1076,7 +1075,7 @@ defEvent = label "defEvent" $ lexeme $ do
   tn <- tableName
   whenE <- optional $ caseInsensitiveSymbol "WHEN" >> exp
   _ <- caseInsensitiveSymbol "THEN"
-  DefEvent en tn whenE <$> exp
+  DefEvent (EventName en) tn whenE <$> exp
 
 fieldType :: Parser FieldType
 fieldType = label "fieldType" $ lexeme $ do
@@ -1085,7 +1084,7 @@ fieldType = label "fieldType" $ lexeme $ do
   mOptional <- optional $ try $ caseInsensitiveSymbol "option<" $> Optional
   t <- identifier
   when (isJust mOptional) $ void $ caseInsensitiveSymbol ">"
-  return $ FieldType flex mOptional t
+  return $ FieldType flex mOptional (TypeName t)
 
 defField :: Parser Define
 defField = label "defField" $ lexeme $ do
@@ -1124,7 +1123,7 @@ snowball = label "snowball" $ lexeme $ do
   _ <- caseInsensitiveSymbol "snowball("
   ln <- identifier
   _ <- caseInsensitiveSymbol ")"
-  return $ Snowball ln
+  return $ Snowball (LanguageName ln)
 
 filterParser :: Parser Filter
 filterParser = label "filter" $ lexeme $ choice
@@ -1142,7 +1141,7 @@ defAnalyzer = label "defAnalyzer" $ lexeme $ do
   an <- identifier
   toks <- optional $ caseInsensitiveSymbol "TOKENIZERS" >> sepBy tokenizer (lexeme $ char ',')
   filters <- optional $ caseInsensitiveSymbol "FILTERS" >> sepBy filterParser (lexeme $ char ',')
-  return $ DefAnalyzer an toks filters
+  return $ DefAnalyzer (AnalyzerName an) toks filters
 
 bm25 :: Parser BM25
 bm25 = label "bm25" $ lexeme $ do
@@ -1163,7 +1162,7 @@ searchAnalyzer = label "searchAnalyzer" $ lexeme $ do
   an <- identifier
   bm <- optional bm25
   hl <- optional $ caseInsensitiveSymbol "HIGHLIGHTS" $> HIGHLIGHTS
-  return $ SearchAnalyzer an bm hl
+  return $ SearchAnalyzer (AnalyzerName an) bm hl
 
 defIndex :: Parser Define
 defIndex = label "defIndex" $ lexeme $ do
@@ -1177,7 +1176,7 @@ defIndex = label "defIndex" $ lexeme $ do
   fs <- sepBy field (lexeme $ char ',')
   u <- optional
     $ (caseInsensitiveSymbol "UNIQUE" $> Left UNIQUE) <|> Right <$> searchAnalyzer
-  return $ DefIndex indxN tn fs u
+  return $ DefIndex (IndexName indxN) tn fs u
 
 defineS :: Parser Statement
 defineS = label "defineS" $ lexeme $
@@ -1221,30 +1220,30 @@ nsdbScope = label "nsdbScope" $ lexeme $ choice $ map try
 removeParam :: Parser Remove
 removeParam = label "removeParam" $ lexeme $ do
   choice $ map try
-    [ caseInsensitiveSymbol "NAMESPACE" >> identifier <&> RMNS
-    , caseInsensitiveSymbol "DATABASE" >> identifier <&> RMDB
-    , caseInsensitiveSymbol "USER" >> RMUser <$> identifier <*> (caseInsensitiveSymbol "ON" >> userScope)
-    , caseInsensitiveSymbol "LOGIN" >> RMLogin <$> identifier <*> (caseInsensitiveSymbol "ON" >> nsdbScope)
-    , caseInsensitiveSymbol "TOKEN" >> RMToken <$> identifier <*> (caseInsensitiveSymbol "ON" >> nsdbScope)
-    , caseInsensitiveSymbol "SCOPE" >> RMScope <$> identifier
+    [ caseInsensitiveSymbol "NAMESPACE" >> (Namespace <$> identifier) <&> RMNS
+    , caseInsensitiveSymbol "DATABASE" >> (Database <$> identifier) <&> RMDB
+    , caseInsensitiveSymbol "USER" >> RMUser <$> (UserName <$> identifier) <*> (caseInsensitiveSymbol "ON" >> userScope)
+    , caseInsensitiveSymbol "LOGIN" >> RMLogin <$> (LoginName <$> identifier) <*> (caseInsensitiveSymbol "ON" >> nsdbScope)
+    , caseInsensitiveSymbol "TOKEN" >> RMToken <$> (TokenName <$> identifier) <*> (caseInsensitiveSymbol "ON" >> nsdbScope)
+    , caseInsensitiveSymbol "SCOPE" >> RMScope <$> (ScopeName <$> identifier)
     , caseInsensitiveSymbol "TABLE" >> RMTable <$> tableName
-    , caseInsensitiveSymbol "EVENT" >> RMEvent <$> identifier
+    , caseInsensitiveSymbol "EVENT" >> RMEvent <$> (EventName <$> identifier)
       <*> (do
               _ <- caseInsensitiveSymbol "ON"
               _ <- optional $ caseInsensitiveSymbol "TABLE"
               tableName)
     , caseInsensitiveSymbol "FUNCTION" >> RMFN <$> fnName
-    , caseInsensitiveSymbol "FIELD" >> RMField <$> identifier
+    , caseInsensitiveSymbol "FIELD" >> RMField <$> (FieldName <$> identifier)
       <*> (do
               _ <- caseInsensitiveSymbol "ON"
               _ <- optional $ caseInsensitiveSymbol "TABLE"
               tableName)
-    , caseInsensitiveSymbol "INDEX" >> RMIndex <$> identifier
+    , caseInsensitiveSymbol "INDEX" >> RMIndex . IndexName <$> identifier
       <*> (do
               _ <- caseInsensitiveSymbol "ON"
               _ <- optional $ caseInsensitiveSymbol "TABLE"
               tableName)
-    , caseInsensitiveSymbol "PARAM" >> RMParam <$> (char '$' >> identifier)
+    , caseInsensitiveSymbol "PARAM" >> RMParam <$> (char '$' >> (ParamName <$> identifier))
     ]
 
 removeS :: Parser Statement

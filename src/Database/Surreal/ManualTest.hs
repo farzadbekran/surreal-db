@@ -87,24 +87,23 @@ testLiveQuery = do
     putStrLn $ "received live notification: " <> tshow r
   return ()
 
--- test2 :: IO ()
--- test2 = do
---   connState <- connect defaultConnectionInfo
---   res <- runSurreal connState $ do
---     let rid = RecordID (TableName "artist") (TextID "00b2pg847d7b8r08t08t")
---     let q@(Query t _ _) =
---           [sql|
---               (
---               select *, ->create->product AS cat
---               from artist
---               where id = %id :: RecordID
---               limit 2
---               fetch cat
---               ) :: (Vector TestRecType2);
---               |]
---     putStr t
---     runQuery (#id .== rid) q
---   print res
+test2 :: MyApp ()
+test2 = do
+  let q =
+        [sql|
+            (
+            select *, ->create->product AS cat
+            from artist
+            where id = %id :: RecordID
+            limit 2
+            fetch cat
+            ) :: (Vector TestRecType2);
+            |]
+  let tn = maybe (P.error "invalid identifier") TableName (mkIdentifier "artist")
+  let rid = RecordID tn (TextID "00b2pg847d7b8r08t08t")
+  putStr (getSQL q)
+  res <- runQuery (#id .== rid) q
+  print res
 
 -- insertTest :: IO ()
 -- insertTest = do

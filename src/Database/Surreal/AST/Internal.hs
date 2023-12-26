@@ -4,6 +4,7 @@
 
 {-# OPTIONS_GHC -Wno-deriving-defaults #-}
 {-# LANGUAGE NamedFieldPuns  #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Database.Surreal.AST.Internal where
 
@@ -42,15 +43,15 @@ instance (HasInput a, HasInput b) => HasInput (Either a b) where
 
 -- | use `mkIdentifier` to create a valid identifier
 newtype Identifier
-  = IdentifierConstructor Text
+  = Ident Text
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Identifier where
-  toQL (IdentifierConstructor t) = t
+  toQL (Ident t) = t
 
 mkIdentifier :: Text -> Maybe Identifier
 mkIdentifier t = case parse identifierWord "" (unpack t) of
-  Right r -> Just $ IdentifierConstructor $ pack r
+  Right r -> Just $ Ident $ pack r
   _       -> Nothing
 
 identifierWord :: Parsec Void String String
@@ -114,20 +115,47 @@ instance ToQL Operator where
     INTERSECTS -> "INTERSECTS"
     (:@@) -> "@@"
 
-type Namespace = Identifier
-type Database = Identifier
-type TableName = Identifier
-type UserName = Identifier
-type ScopeName = Identifier
-type TokenName = Identifier
-type EventName = Identifier
-type FieldName = Identifier
-type TypeName = Identifier
-type ParamName = Identifier
-type AnalyzerName = Identifier
-type LanguageName = Identifier
-type IndexName = Identifier
-type LoginName = Identifier
+newtype Namespace = Namespace Identifier
+  deriving (Eq, Generic, Read, Show, ToQL)
+
+newtype Database = Database Identifier
+  deriving (Eq, Generic, Read, Show, ToQL)
+
+newtype TableName = TableName Identifier
+  deriving (Eq, Generic, Read, Show, ToQL)
+
+newtype UserName = UserName Identifier
+  deriving (Eq, Generic, Read, Show, ToQL)
+
+newtype ScopeName = ScopeName Identifier
+  deriving (Eq, Generic, Read, Show, ToQL)
+
+newtype TokenName = TokenName Identifier
+  deriving (Eq, Generic, Read, Show, ToQL)
+
+newtype EventName = EventName Identifier
+  deriving (Eq, Generic, Read, Show, ToQL)
+
+newtype FieldName = FieldName Identifier
+  deriving (Eq, Generic, Read, Show, ToQL)
+
+newtype TypeName = TypeName Identifier
+  deriving (Eq, Generic, Read, Show, ToQL)
+
+newtype ParamName = ParamName Identifier
+  deriving (Eq, Generic, Read, Show, ToQL)
+
+newtype AnalyzerName = AnalyzerName Identifier
+  deriving (Eq, Generic, Read, Show, ToQL)
+
+newtype LanguageName = LanguageName Identifier
+  deriving (Eq, Generic, Read, Show, ToQL)
+
+newtype IndexName = IndexName Identifier
+  deriving (Eq, Generic, Read, Show, ToQL)
+
+newtype LoginName = LoginName Identifier
+  deriving (Eq, Generic, Read, Show, ToQL)
 
 type TokenValue = Text
 

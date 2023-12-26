@@ -3,6 +3,6 @@ module Database.Surreal.AST
     ) where
 
 import           Database.Surreal.AST.Internal as AST hiding
-                                                      ( IdentifierConstructor,
+                                                      ( Ident,
                                                         identifierWord
                                                         )

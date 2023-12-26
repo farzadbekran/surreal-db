@@ -7,6 +7,7 @@ module Database.Surreal.MonadSurreal where
 import           ClassyPrelude          hiding ( error, id )
 import           Control.Monad.Catch
 import           Data.Aeson             as J
+import           Database.Surreal.AST   ( Database, Namespace )
 import           Database.Surreal.TH
 import           Database.Surreal.Types
 
@@ -16,3 +17,4 @@ class MonadThrow m => MonadSurreal m where
   runQuery :: input -> Query input (Either DecodeError output) -> m output
   registerLiveListener :: Text -> (LiveResponse -> IO ()) -> m ()
   unregisterLiveListener :: Text -> m ()
+  --use :: Maybe Namespace -> Maybe Database -> m ()
