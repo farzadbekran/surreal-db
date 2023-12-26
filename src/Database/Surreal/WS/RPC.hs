@@ -21,15 +21,19 @@ import           Control.Monad.Catch           hiding ( try )
 import           Control.Monad.Trans           ( MonadTrans )
 import           Data.Aeson                    ( Value (..), decode, encode,
                                                  object, (.=) )
+import           Data.Aeson.KeyMap             ( KeyMap )
 import qualified Data.Aeson.KeyMap             as AKM
 import qualified Data.ByteString.Lazy          as BL
 import           Data.Map.Strict               as M
+import           Database.Surreal.AST          ( Database, Namespace, ScopeName,
+                                                 ToQL (..), TokenValue,
+                                                 UserName, Identifier, TableName )
 import           Database.Surreal.MonadSurreal
+import           Database.Surreal.TH
 import           Database.Surreal.Types
 import           Database.Surreal.WS.RPCTypes
 import           Network.Socket                ( withSocketsDo )
 import qualified Network.WebSockets            as WS
-import Database.Surreal.TH
 
 newtype SurrealRPC a
   = SurrealRPC { unSurrealRPC :: ReaderT RPCConnectionState IO a }
@@ -53,6 +57,15 @@ instance MonadSurreal SurrealRPC where
   runQuery = runQueryRPC
   registerLiveListener = registerLiveListenerRPC
   unregisterLiveListener = unregisterLiveListenerRPC
+  use = useRPC
+  info = infoRPC
+  signup = signupRPC
+  signin = signinRPC
+  authenticate = authenticateRPC
+  invalidate = invalidateRPC
+  let_ = letRPC
+  unset = unsetRPC
+  live = liveRPC
 
 runSurrealRPC :: RPCConnectionState -> SurrealRPC a -> IO a
 runSurrealRPC cs m = runReaderT (unSurrealRPC m) cs
@@ -79,6 +92,15 @@ instance (MonadThrow m, MonadUnliftIO m, MonadThrow (SurrealRPCT m)) => MonadSur
   runQuery = runQueryRPC
   registerLiveListener = registerLiveListenerRPC
   unregisterLiveListener = unregisterLiveListenerRPC
+  use = useRPC
+  info = infoRPC
+  signup = signupRPC
+  signin = signinRPC
+  authenticate = authenticateRPC
+  invalidate = invalidateRPC
+  let_ = letRPC
+  unset = unsetRPC
+  live = liveRPC
 
 instance ( MonadUnliftIO m
          , MonadTrans t
@@ -91,6 +113,15 @@ instance ( MonadUnliftIO m
   runQuery input query = lift $ runQuery input query
   registerLiveListener t handler = lift $ registerLiveListenerRPC t handler
   unregisterLiveListener t = lift $ unregisterLiveListenerRPC t
+  use ns db = lift $ useRPC ns db
+  info = lift infoRPC
+  signup ns db scope km = lift $ signupRPC ns db scope km
+  signin us pass ns db scope km = lift $ signinRPC us pass ns db scope km
+  authenticate token = lift $ authenticateRPC token
+  invalidate = lift invalidateRPC
+  let_ i v = lift $ letRPC i v
+  unset i = lift $ unsetRPC i
+  live tn = lift $ liveRPC tn
 
 runSurrealRPCT :: RPCConnectionState -> SurrealRPCT m a -> m a
 runSurrealRPCT cs action = runReaderT (unSurrealRPCT action) cs
@@ -229,3 +260,86 @@ unregisterLiveListenerRPC uuid = do
   forM_ err throw
   RPCConnectionState { .. } <- ask
   atomically $ modifyTVar' liveRespMap (M.delete uuid)
+
+-- | Makes sure the response contains no error and returns the value from the `result` key
+getResponseValue :: Response -> Either SurrealError (Maybe Value)
+getResponseValue Response { result = result, error = err } =
+  case err of
+    Nothing -> Right result
+    Just e  -> Left e
+
+useRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Namespace -> Database -> m ()
+useRPC ns db = do
+  r <- getResponseValue <$> sendRPC "use" [String $ toQL ns, String $ toQL db]
+  case r of
+    Right _ -> return ()
+    Left e  -> throw e
+
+infoRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => m (Maybe Value)
+infoRPC = do
+  r <- getResponseValue <$> sendRPC "info" []
+  case r of
+    Right r' -> return r'
+    Left e   -> throw e
+
+signupRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Namespace -> Database -> ScopeName -> KeyMap Value -> m (Maybe Value)
+signupRPC ns db scope km = do
+  let p = Object $ ( AKM.insert "NS" (String $ toQL ns)
+                     . AKM.insert "DB" (String $ toQL db)
+                     . AKM.insert "SC" (String $ toQL scope) )
+          km
+  r <- getResponseValue <$> sendRPC "signup" [p]
+  case r of
+    Right r' -> return r'
+    Left e   -> throw e
+
+signinRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) =>
+  UserName -> Password -> Maybe Namespace -> Maybe Database -> Maybe ScopeName -> KeyMap Value -> m TokenValue
+signinRPC un pass ns db scope km = do
+  let p = Object $ ( AKM.insert "user" (String $ toQL un)
+                     . AKM.insert "pass" (String $ toQL pass)
+                     . AKM.insert "NS" (String $ toQL ns)
+                     . AKM.insert "DB" (String $ toQL db)
+                     . AKM.insert "SC" (String $ toQL scope) )
+          km
+  r <- getResponseValue <$> sendRPC "signin" [p]
+  case r of
+    Right (Just (String r')) -> return r'
+    Left e   -> throw e
+    Right v -> throw $ DriverError $ "signinRPC: Unexpected response: " <> show v
+
+authenticateRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => TokenValue -> m ()
+authenticateRPC token = do
+  r <- getResponseValue <$> sendRPC "authenticate" [String token]
+  case r of
+    Right _ -> return ()
+    Left e  -> throw e
+
+invalidateRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => m ()
+invalidateRPC = do
+  r <- getResponseValue <$> sendRPC "invalidate" []
+  case r of
+    Right _ -> return ()
+    Left e  -> throw e
+
+letRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Identifier -> Value -> m ()
+letRPC i v = do
+  r <- getResponseValue <$> sendRPC "let" [String $ toQL i, v]
+  case r of
+    Right _ -> return ()
+    Left e  -> throw e
+
+unsetRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Identifier -> m ()
+unsetRPC i = do
+  r <- getResponseValue <$> sendRPC "unset" [String $ toQL i]
+  case r of
+    Right _ -> return ()
+    Left e  -> throw e
+
+liveRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => TableName -> m LiveQueryUUID
+liveRPC tn = do
+  r <- getResponseValue <$> sendRPC "live" [String $ toQL tn]
+  case r of
+    Right (Just (String r')) -> return r'
+    Left e   -> throw e
+    Right v -> throw $ DriverError $ "signinRPC: Unexpected response: " <> show v

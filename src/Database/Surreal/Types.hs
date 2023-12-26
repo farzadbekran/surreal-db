@@ -64,3 +64,7 @@ defaultConnectionInfo = ConnectionInfo "0.0.0.0" 8000 "root" "root" "test" "test
 newtype DecodeError
   = DecodeError String
   deriving (Exception, Show)
+
+newtype DriverError
+  = DriverError String
+  deriving (Exception, Show)
