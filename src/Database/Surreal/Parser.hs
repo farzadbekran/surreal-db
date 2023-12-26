@@ -105,13 +105,16 @@ int64L = label "Int64L" $ lexeme $ Int64L <$> L.signed sc intParser
 floatL :: Parser Literal
 floatL = label "FloatL" $ lexeme $ FloatL <$> L.signed sc floatParser
 
-dateTimeL :: Parser Literal
-dateTimeL = label "UTCTime" $ lexeme $ do
-  s <- someTill asciiChar (char 'Z')
-  let mUTC = parseISO8601 $ s <> "Z"
+utcTimeParser :: Parser UTCTime
+utcTimeParser = label "utcTimeParser" $ lexeme $ do
+  s <- unpack <$> quotedText
+  let mUTC = parseISO8601 s
   case mUTC of
-    Just utc -> return $ DateTimeL utc
+    Just utc -> return utc
     _        -> fail "Invalid ISO8601 DateTime"
+
+dateTimeL :: Parser Literal
+dateTimeL = label "dateTimeL" $ lexeme $ DateTimeL <$> utcTimeParser
 
 durationParser :: Parser Duration
 durationParser = label "Duration" $ lexeme $ do
@@ -811,6 +814,24 @@ infoE = label "infoE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "FOR"
   InfoE <$> infoParam
 
+timeStamp :: Parser TimeStamp
+timeStamp = label "timeStamp" $ lexeme $ do
+  choice $ map try
+    [ TimeStamp <$> utcTimeParser
+    , TimeStampParam <$> param
+    ]
+
+showChangesE :: Parser Exp
+showChangesE = label "showChangesE" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "SHOW"
+  _ <- caseInsensitiveSymbol "CHANGES"
+  _ <- caseInsensitiveSymbol "FOR"
+  _ <- caseInsensitiveSymbol "TABLE"
+  tn <- tableName
+  mSince <- optional $ caseInsensitiveSymbol "SINCE" >> timeStamp
+  mLimit <- optional limit
+  return $ ShowChangesE tn mSince mLimit
+
 -- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
 operatorTable = [ [ E.Postfix typedExp
@@ -877,6 +898,7 @@ term = sc
               , returnE
               , infoE
               , WhereE <$> where_
+              , showChangesE
               , appE
               , edgeSelectorE
               , litE

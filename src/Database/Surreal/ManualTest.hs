@@ -59,6 +59,8 @@ test = do
             info for table my_table;
             --kill $qid;
             remove event my_event on table my_table;
+            -- Replay changes to the reading table
+            SHOW CHANGES FOR TABLE reading SINCE "2023-09-07T01:23:52Z" LIMIT 10;
             select 1 + 2 as ppp :: Int from artist limit 1;
             |]
       q2 = lmap (\(txt, i) -> #name .== txt .+ #fname .== i) q

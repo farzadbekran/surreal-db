@@ -6,7 +6,6 @@
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE NoImplicitPrelude     #-}
 {-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeApplications      #-}
 
 module Database.Surreal.TypeHandler where
@@ -112,6 +111,7 @@ getBaseType = \case
   se@(SelectE {}) -> getSelectBaseType se
   ie@(InsertE {}) -> fail $ "getBaseType: Insert Expressions must have a type: " <> show ie
   (LiveSelectE {}) -> return [(Nothing, T "Text" [])]
+  ShowChangesE {} -> return [(Nothing, T "Value" [])]
   a -> fail $ "getBaseType: undefined: " <> show a
 
 -- | converts `TypeDef` to TH type definition AST

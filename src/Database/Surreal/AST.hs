@@ -20,10 +20,10 @@ class ToQL a where
 
 instance ToQL a => ToQL (Maybe a) where
   toQL (Just a) = toQL a
-  toQL _ = ""
+  toQL _        = ""
 
 instance (ToQL a, ToQL b) => ToQL (Either a b) where
-  toQL (Left a) = toQL a
+  toQL (Left a)  = toQL a
   toQL (Right b) = toQL b
 
 class HasInput a where
@@ -31,10 +31,10 @@ class HasInput a where
 
 instance HasInput a => HasInput (Maybe a) where
   getInputs (Just a) = getInputs a
-  getInputs _ = []
+  getInputs _        = []
 
 instance (HasInput a, HasInput b) => HasInput (Either a b) where
-  getInputs (Left a) = getInputs a
+  getInputs (Left a)  = getInputs a
   getInputs (Right b) = getInputs b
 
 newtype FNName
@@ -131,12 +131,12 @@ data Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Param where
-  toQL (SQLParam t) = "$" <> t
+  toQL (SQLParam t)     = "$" <> t
   toQL (InputParam t _) = "$" <> t
 
 instance HasInput Param where
   getInputs (SQLParam _) = []
-  getInputs i = [i]
+  getInputs i            = [i]
 
 data Field
   = WildCardField
@@ -366,6 +366,19 @@ instance HasInput LIMIT where
   getInputs (LIMITParam p) = getInputs p
   getInputs _              = []
 
+data TimeStamp
+  = TimeStamp UTCTime
+  | TimeStampParam Param
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL TimeStamp where
+  toQL (TimeStamp ts)     = pack $ "\"" <> formatISO8601 ts <> "\""
+  toQL (TimeStampParam p) = toQL p
+
+instance HasInput TimeStamp where
+  getInputs (TimeStampParam p) = getInputs p
+  getInputs _                  = []
+
 data START
   = START Int64
   | STARTParam Param
@@ -562,7 +575,7 @@ instance ToQL Literal where
     TextL t -> "'" <> t <> "'"
     Int64L i64 -> (pack . show) i64
     FloatL f -> (pack . show) f
-    DateTimeL dt -> pack $ formatISO8601 dt
+    DateTimeL dt -> pack $ "\"" <> formatISO8601 dt <> "\""
     DurationL (Duration { .. }) ->
       let frmt i l = if i > 0 then tshow i <> l else "" in
       frmt _y "y"
@@ -733,7 +746,12 @@ instance ToQL DIFF where
 instance HasInput DIFF where
   getInputs _ = []
 
-data InfoParam = IPRoot | IPNS | IPDB | IPScope ScopeName | IPTable TableName
+data InfoParam
+  = IPRoot
+  | IPNS
+  | IPDB
+  | IPScope ScopeName
+  | IPTable TableName
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL InfoParam where
@@ -764,6 +782,7 @@ data Exp
   | ReturnE Exp
   | InParenE Exp
   | InfoE InfoParam
+  | ShowChangesE TableName (Maybe TimeStamp) (Maybe LIMIT)
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Exp where
@@ -854,6 +873,13 @@ instance ToQL Exp where
     ReturnE e -> "RETURN " <> toQL e
     InParenE e -> "(" <> toQL e <> ")"
     InfoE ip -> "INFO FOR " <> toQL ip
+    ShowChangesE tn mSince mLimit ->
+      prepText [ "SHOW CHANGES FOR TABLE"
+               , toQL tn
+               , case mSince of
+                   Just ts -> " SINCE " <> toQL ts
+                   Nothing -> ""
+               , toQL mLimit]
 
 instance HasInput Exp where
   getInputs = \case
@@ -894,6 +920,7 @@ instance HasInput Exp where
     ReturnE e -> getInputs e
     InParenE e -> getInputs e
     InfoE _ -> []
+    ShowChangesE _ since limit -> getInputs since <> getInputs limit
 
 data UserScope = USROOT | USNS | USDB
   deriving (Eq, Generic, Read, Show)
@@ -1014,11 +1041,7 @@ instance ToQL FieldType where
     <> "TYPE "
     <> if isJust optn then "option<" <> toQL tn <> ">" else toQL tn
 
-data Tokenizer
-  = BLANK
-  | CAMEL
-  | CLASS
-  | PUNCT
+data Tokenizer = BLANK | CAMEL | CLASS | PUNCT
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Tokenizer where
@@ -1056,15 +1079,17 @@ data HIGHLIGHTS = HIGHLIGHTS
 instance ToQL HIGHLIGHTS where
   toQL _ = "HIGHLIGHTS"
 
-newtype BM25 = BM25 (Maybe (K1, B))
+newtype BM25
+  = BM25 (Maybe (K1, B))
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL BM25 where
   toQL (BM25 mParams) = "BM25" <> case mParams of
     Just (k1, b) -> "(" <> tshow k1 <> ", " <> tshow b <> ")"
-    Nothing -> ""
+    Nothing      -> ""
 
-data SearchAnalyzer = SearchAnalyzer AnalyzerName (Maybe BM25) (Maybe HIGHLIGHTS)
+data SearchAnalyzer
+  = SearchAnalyzer AnalyzerName (Maybe BM25) (Maybe HIGHLIGHTS)
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL SearchAnalyzer where
@@ -1117,13 +1142,13 @@ instance ToQL Define where
          , toQL sn
          , case mDur of
              Just dur -> "SESSION " <> toQL dur
-             Nothing -> ""
+             Nothing  -> ""
          , case mSignUp of
              Just signUp -> "SIGNUP " <> toQL signUp
-             Nothing -> ""
+             Nothing     -> ""
          , case mSignIn of
              Just signIn -> "SIGNIN " <> toQL signIn
-             Nothing -> ""
+             Nothing     -> ""
          ]
     DefTable tn mDrop mSchema mExp mDur mPerms
       -> prepText
@@ -1190,8 +1215,8 @@ instance ToQL Define where
          , intercalate "," $ map toQL fields
          , case meUSA of
              Just (Right sa) -> toQL sa
-             Just (Left u) -> toQL u
-             Nothing -> ""
+             Just (Left u)   -> toQL u
+             Nothing         -> ""
          ]
 
 data Remove
@@ -1224,7 +1249,9 @@ instance ToQL Remove where
     RMIndex indx tn -> "INDEX " <> indx <> " ON TABLE " <> toQL tn
     RMParam p -> "PARAM " <> toQL p
 
-data KillParam = KPUUID Text | KPParam Param
+data KillParam
+  = KPUUID Text
+  | KPParam Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL KillParam where
