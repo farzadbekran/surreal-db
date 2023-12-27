@@ -1301,6 +1301,8 @@ surQLLine = lexeme $ choice $ map try
 block :: Parser Block
 block = sc >> lexeme
   (do
-    bl <- Block <$> some surQLLine
+    ls <- some surQLLine
+    when (null ls) (fail "At least one SQL line expected!")
     eof
-    return bl)
+    return $ Block ls
+  )

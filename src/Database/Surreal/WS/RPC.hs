@@ -308,8 +308,8 @@ infoRPC = do
     Left e   -> throw e
 
 signupRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) =>
-  Namespace -> Database -> ScopeName -> AKM.KeyMap J.Value -> m (Maybe J.Value)
-signupRPC ns db scope km = do
+  Namespace -> Database -> ScopeName -> J.Value -> m (Maybe J.Value)
+signupRPC ns db scope (J.Object km) = do
   let p = J.Object $ ( AKM.insert "NS" (J.String $ toQL ns)
                        . AKM.insert "DB" (J.String $ toQL db)
                        . AKM.insert "SC" (J.String $ toQL scope) )
@@ -318,10 +318,11 @@ signupRPC ns db scope km = do
   case r of
     Right r' -> return r'
     Left e   -> throw e
+signupRPC _ _ _ v = throw $ DriverError $ "signupRPC: Expected a JSON Object but got: " <> show v
 
 signinRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) =>
-  UserName -> Password -> Maybe Namespace -> Maybe Database -> Maybe ScopeName -> AKM.KeyMap J.Value -> m TokenValue
-signinRPC un pass ns db scope km = do
+  UserName -> Password -> Maybe Namespace -> Maybe Database -> Maybe ScopeName -> J.Value -> m TokenValue
+signinRPC un pass ns db scope (J.Object km) = do
   let p = J.Object $ ( AKM.insert "user" (J.String $ toQL un)
                        . AKM.insert "pass" (J.String $ toQL pass)
                        . AKM.insert "NS" (J.String $ toQL ns)
@@ -333,6 +334,7 @@ signinRPC un pass ns db scope km = do
     Right (Just (J.String r')) -> return r'
     Left e   -> throw e
     Right v -> throw $ DriverError $ "signinRPC: Unexpected response: " <> show v
+signinRPC _ _ _ _ _ v = throw $ DriverError $ "signinRPC: Expected a JSON Object but got: " <> show v
 
 authenticateRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => TokenValue -> m ()
 authenticateRPC token = do
@@ -377,15 +379,21 @@ killRPC i = do
     Right _ -> return ()
     Left e  -> throw e
 
-selectRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Text -> m (Maybe J.Value)
-selectRPC t = do
+selectRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => OPTarget -> m (Maybe J.Value)
+selectRPC target = do
+  let t = case target of
+            Table tn   -> toQL tn
+            Record rid -> toQL rid
   r <- getResponseValue <$> sendRPC "select" [J.String t]
   case r of
     Right r' -> return r'
     Left e   -> throw e
 
-createRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Text -> Maybe J.Value -> m J.Value
-createRPC t mVal = do
+createRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => OPTarget -> Maybe J.Value -> m J.Value
+createRPC target mVal = do
+  let t = case target of
+            Table tn   -> toQL tn
+            Record rid -> toQL rid
   r <- getResponseValue <$> sendRPC "create" (J.String t : case mVal of
                                                  Just v -> [v]
                                                  _      -> [])
@@ -402,8 +410,11 @@ insertRPC tn vs = do
     Right x -> throw $ DriverError $ "insertRPC: Unexpected result: " <> show x
     Left e   -> throw e
 
-updateRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Text -> Maybe J.Value -> m J.Value
-updateRPC t mVal = do
+updateRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => OPTarget -> Maybe J.Value -> m J.Value
+updateRPC target mVal = do
+  let t = case target of
+            Table tn   -> toQL tn
+            Record rid -> toQL rid
   r <- getResponseValue <$> sendRPC "update" (J.String t : case mVal of
                                                  Just v -> [v]
                                                  _      -> [])
@@ -412,8 +423,11 @@ updateRPC t mVal = do
     Right x -> throw $ DriverError $ "updateRPC: Unexpected result: " <> show x
     Left e   -> throw e
 
-mergeRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Text -> Maybe J.Value -> m J.Value
-mergeRPC t mVal = do
+mergeRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => OPTarget -> Maybe J.Value -> m J.Value
+mergeRPC target mVal = do
+  let t = case target of
+            Table tn   -> toQL tn
+            Record rid -> toQL rid
   r <- getResponseValue <$> sendRPC "merge" (J.String t : case mVal of
                                                  Just v -> [v]
                                                  _      -> [])
@@ -422,16 +436,22 @@ mergeRPC t mVal = do
     Right x -> throw $ DriverError $ "mergeRPC: Unexpected result: " <> show x
     Left e   -> throw e
 
-patchRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Text -> [J.Value] -> m J.Value
-patchRPC t vs = do
+patchRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => OPTarget -> [J.Value] -> m J.Value
+patchRPC target vs = do
+  let t = case target of
+            Table tn   -> toQL tn
+            Record rid -> toQL rid
   r <- getResponseValue <$> sendRPC "patch" (J.String t : vs)
   case r of
     Right (Just r') -> return r'
     Right x -> throw $ DriverError $ "patchRPC: Unexpected result: " <> show x
     Left e   -> throw e
 
-deleteRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Text -> m J.Value
-deleteRPC t = do
+deleteRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => OPTarget -> m J.Value
+deleteRPC target = do
+  let t = case target of
+            Table tn   -> toQL tn
+            Record rid -> toQL rid
   r <- getResponseValue <$> sendRPC "delete" [J.String t]
   case r of
     Right (Just r') -> return r'

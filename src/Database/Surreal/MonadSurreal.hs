@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -7,15 +8,20 @@ module Database.Surreal.MonadSurreal where
 import           ClassyPrelude          hiding ( error, id )
 import           Control.Monad.Catch
 import           Data.Aeson             as J
-import           Data.Aeson.KeyMap
-import           Database.Surreal.AST   ( Database, Namespace, ScopeName,
-                                          TokenValue, UserName, Identifier, TableName, RecordID )
+import           Database.Surreal.AST   ( Database, Identifier, Namespace,
+                                          RecordID, ScopeName, TableName,
+                                          TokenValue, UserName )
 import           Database.Surreal.TH
 import           Database.Surreal.Types
 
 type Password = Text
 type LiveQueryUUID = Text
 type SQL = Text
+
+data OPTarget
+  = Table TableName
+  | Record RecordID
+  deriving (Eq, Generic, Show)
 
 class MonadThrow m => MonadSurreal m where
   -- | Used internally to generate incrementing ids for requests
@@ -39,9 +45,11 @@ class MonadThrow m => MonadSurreal m where
   -- | This method returns the record of an authenticated scope user.
   info :: m (Maybe Value)
   -- | This method allows you to signup a user against a scope's SIGNUP method
-  signup :: Namespace -> Database -> ScopeName -> KeyMap Value -> m (Maybe Value)
+  --The value should be a JSON Object, containing extra params
+  signup :: Namespace -> Database -> ScopeName -> Value -> m (Maybe Value)
   -- | This method allows you to signin a root, NS, DB or SC user against SurrealDB
-  signin :: UserName -> Password -> Maybe Namespace -> Maybe Database -> Maybe ScopeName -> KeyMap Value -> m TokenValue
+  --The value should be a JSON Object, containing extra params
+  signin :: UserName -> Password -> Maybe Namespace -> Maybe Database -> Maybe ScopeName -> Value -> m TokenValue
   -- | Authenticate a user against SurrealDB with a token
   authenticate :: TokenValue -> m ()
   -- | This method will invalidate the user's session for the current connection
@@ -56,17 +64,17 @@ class MonadThrow m => MonadSurreal m where
   kill :: LiveQueryUUID -> m ()
   -- | This method selects either all records in a table or a single record
   --using a record id
-  select :: Text -> m (Maybe Value)
+  select :: OPTarget -> m (Maybe Value)
   -- | This method creates a record either with a random or specified ID
-  create :: Text -> Maybe Value -> m Value
+  create :: OPTarget -> Maybe Value -> m Value
   -- | Insert one or multiple records in a table
   insert :: TableName -> [Value] -> m [Value]
   -- | Update a specified record or table with the given value,
   --if no value is given, simply trigger an update event on the target
-  update :: Text -> Maybe Value -> m Value
+  update :: OPTarget -> Maybe Value -> m Value
   -- | This method merges specified data into either all records in a table or a single record
-  merge :: Text -> Maybe Value -> m Value
+  merge :: OPTarget -> Maybe Value -> m Value
   -- | Patch a record or table with the given JSON Patches
-  patch :: Text -> [Value] -> m Value
+  patch :: OPTarget -> [Value] -> m Value
   -- | Delete a record or whole contents of a table
-  delete :: Text -> m Value
+  delete :: OPTarget -> m Value
