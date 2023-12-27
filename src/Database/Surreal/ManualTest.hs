@@ -67,15 +67,15 @@ test = do
       q2 = lmap (\(txt, i) -> #name .== txt .+ #fname .== i) q
       q3 = rmap (\r -> map (.! #ppp) <$> r) q2
   putStr (getSQL q)
-  --runQuery (#name .== "my-name" .+ #fname .== 123) q
-  runQuery ("my-name", 123) q3
+  --query (#name .== "my-name" .+ #fname .== 123) q
+  query ("my-name", 123) q3
 
 testLiveQuery :: MyApp ()
 testLiveQuery = do
   let q = [sql|
               live select * from artist;
               |]
-  uuid <- runQuery () q
+  uuid <- query () q
   listenMvar <- newEmptyMVar
   let handler = putMVar listenMvar
   print uuid
@@ -102,7 +102,7 @@ test2 = do
   let tn = maybe (P.error "invalid identifier") TableName (mkIdentifier "artist")
   let rid = RecordID tn (TextID "00b2pg847d7b8r08t08t")
   putStr (getSQL q)
-  res <- runQuery (#id .== rid) q
+  res <- query (#id .== rid) q
   print res
 
 -- insertTest :: IO ()
@@ -115,7 +115,7 @@ test2 = do
 --                 ON DUPLICATE KEY UPDATE numUpdate += 1) :: Vector TestRecType3;
 --               |]
 --     putStr t
---     runQuery (#v1 .== "inputval1" .+ #v2 .== "inputval \" 2") q
+--     query (#v1 .== "inputval1" .+ #v2 .== "inputval \" 2") q
 --   print res
 
 -- insertTest2 :: IO ()
@@ -127,7 +127,7 @@ test2 = do
 --               INSERT INTO test { name : "farzad", fname : "bekran" } :: Vector TestRecType3;
 --               |]
 --     putStr t
---     runQuery () q
+--     query () q
 --   print res
 
 -- insertTest3 :: IO ()
@@ -139,7 +139,7 @@ test2 = do
 --               INSERT INTO test [{id : test:uuid(), name : "farzad", fname : "bekran" },{ name : "farzad2", fname : "bekran2" }] :: Vector TestRecType3;
 --               |]
 --     putStr t
---     runQuery () q
+--     query () q
 --   print res
 
 -- createTest1 :: IO ()
@@ -151,7 +151,7 @@ test2 = do
 --               (CREATE test CONTENT {name: "farzad create", fname: "bekran"}) :: Vector TestRecType3;
 --               |]
 --     putStr t
---     runQuery () q
+--     query () q
 --   print res
 
 -- createTest2 :: IO ()
@@ -163,7 +163,7 @@ test2 = do
 --               (CREATE test SET name = "farzad create2", fname = "bekran") :: Vector TestRecType3;
 --               |]
 --     putStr t
---     runQuery () q
+--     query () q
 --   print res
 
 -- createTest3 :: IO ()
@@ -175,7 +175,7 @@ test2 = do
 --               (CREATE test SET name = "farzad create3", fname = "bekran" RETURN id, name, fname) :: Vector TestRecType3;
 --               |]
 --     putStr t
---     runQuery () q
+--     query () q
 --   print res
 
 -- deleteTest1 :: IO ()
@@ -187,7 +187,7 @@ test2 = do
 --               (DELETE test) :: ();
 --               |]
 --     putStr t
---     runQuery () q
+--     query () q
 --   print res
 
 -- deleteTest2 :: IO ()
@@ -201,7 +201,7 @@ test2 = do
 --               (DELETE test where id = %id :: RecordID) :: ();
 --               |]
 --     putStr t
---     runQuery (#id .== rid) q
+--     query (#id .== rid) q
 --   print res
 
 -- updateTest1 :: IO ()
@@ -215,7 +215,7 @@ test2 = do
 --               (UPDATE test SET name = "updated Name" where id = (%id :: RecordID) RETURN NONE) :: ();
 --               |]
 --     putStr t
---     runQuery (#id .== rid) q
+--     query (#id .== rid) q
 --   print res
 
 -- updateTest2 :: IO ()
@@ -227,7 +227,7 @@ test2 = do
 --               (UPDATE artist:00d3xv269u0x5o37q16u->create->product SET name = "updated Name") :: ();
 --               |]
 --     putStr t
---     runQuery () q
+--     query () q
 --   print res
 
 -- selectTest1 :: IO ()
@@ -239,7 +239,7 @@ test2 = do
 --               (SELECT * FROM person WHERE ->knows->person->(knows WHERE influencer = true) TIMEOUT 5s) :: Value;
 --               |]
 --     putStr t
---     runQuery () q
+--     query () q
 --   print res
 
 -- relateTest1 :: IO ()
@@ -251,7 +251,7 @@ test2 = do
 --               (RELATE person:l19zjikkw1p1h9o6ixrg->wrote->article:8nkk6uj4yprt49z7y3zm SET time.written = "just now!") :: Value;
 --               |]
 --     putStr t
---     runQuery () q
+--     query () q
 --   print res
 
 -- defineTest1 :: IO ()
@@ -303,7 +303,7 @@ test2 = do
 --               (create test_table_2 set p.testField = /[A-Z]/) :: Value;
 --               |]
 --     putStr t
---     runQuery (#p .== "my val") q
+--     query (#p .== "my val") q
 --   print res
 
 -- inputTest :: IO ()
@@ -317,7 +317,7 @@ test2 = do
 --               where first_name = %fn :: Text;
 --               |]
 --     putStr t
---     runQuery (#fn .== "Lasonya") q
+--     query (#fn .== "Lasonya") q
 --   print res
 
 -- returnTest :: IO ()
@@ -329,7 +329,7 @@ test2 = do
 --               return 123 :: Int64;
 --               |]
 --     putStr t
---     runQuery () q
+--     query () q
 --   print res
 
 -- exceptionTest :: IO ()
@@ -341,7 +341,7 @@ test2 = do
 --               return 123 :: Int64;
 --               |]
 --     putStr t
---     runQuery () q
+--     query () q
 --   print res
 
 -- txTest :: IO ()
@@ -356,7 +356,7 @@ test2 = do
 --               commit;
 --               return $res :: Value;
 --               |]
---     -- _ <- runQuery () q
---     -- runQuery () [sql| commit; |]
---     runQuery () q
+--     -- _ <- query () q
+--     -- query () [sql| commit; |]
+--     query () q
 --   print res

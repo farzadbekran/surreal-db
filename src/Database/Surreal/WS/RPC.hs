@@ -19,15 +19,16 @@ import           Control.Concurrent            ( ThreadId, forkIO, myThreadId,
 import           Control.Exception             ( throw )
 import           Control.Monad.Catch           hiding ( try )
 import           Control.Monad.Trans           ( MonadTrans )
-import           Data.Aeson                    ( Value (..), decode, encode,
-                                                 object, (.=) )
-import           Data.Aeson.KeyMap             ( KeyMap )
+import qualified Data.Aeson                    as J ( Value (..), decode,
+                                                      encode, object, (.=) )
 import qualified Data.Aeson.KeyMap             as AKM
 import qualified Data.ByteString.Lazy          as BL
 import           Data.Map.Strict               as M
-import           Database.Surreal.AST          ( Database, Namespace, ScopeName,
-                                                 ToQL (..), TokenValue,
-                                                 UserName, Identifier, TableName )
+import qualified Data.Vector                   as V
+import           Database.Surreal.AST          ( Database, Identifier,
+                                                 Namespace, ScopeName,
+                                                 TableName, ToQL (..),
+                                                 TokenValue, UserName )
 import           Database.Surreal.MonadSurreal
 import           Database.Surreal.TH
 import           Database.Surreal.Types
@@ -54,7 +55,7 @@ instance MonadSurreal SurrealRPC where
   send t vs = do
     cs <- ask
     runReaderT (sendRPC t vs) cs
-  runQuery = runQueryRPC
+  query = queryRPC
   registerLiveListener = registerLiveListenerRPC
   unregisterLiveListener = unregisterLiveListenerRPC
   use = useRPC
@@ -66,6 +67,14 @@ instance MonadSurreal SurrealRPC where
   let_ = letRPC
   unset = unsetRPC
   live = liveRPC
+  kill = killRPC
+  select = selectRPC
+  create = createRPC
+  insert = insertRPC
+  update = updateRPC
+  merge = mergeRPC
+  patch = patchRPC
+  delete = deleteRPC
 
 runSurrealRPC :: RPCConnectionState -> SurrealRPC a -> IO a
 runSurrealRPC cs m = runReaderT (unSurrealRPC m) cs
@@ -89,7 +98,7 @@ instance (MonadThrow m, MonadUnliftIO m, MonadThrow (SurrealRPCT m)) => MonadSur
   send t vs = do
     cs <- ask
     liftIO $ runReaderT (sendRPC t vs) cs
-  runQuery = runQueryRPC
+  query = queryRPC
   registerLiveListener = registerLiveListenerRPC
   unregisterLiveListener = unregisterLiveListenerRPC
   use = useRPC
@@ -101,6 +110,14 @@ instance (MonadThrow m, MonadUnliftIO m, MonadThrow (SurrealRPCT m)) => MonadSur
   let_ = letRPC
   unset = unsetRPC
   live = liveRPC
+  kill = killRPC
+  select = selectRPC
+  create = createRPC
+  insert = insertRPC
+  update = updateRPC
+  merge = mergeRPC
+  patch = patchRPC
+  delete = deleteRPC
 
 instance ( MonadUnliftIO m
          , MonadTrans t
@@ -110,7 +127,7 @@ instance ( MonadUnliftIO m
          MonadSurreal (t (SurrealRPCT m)) where
   getNextRequestID = lift getNextRequestID
   send t vs = lift $ send t vs
-  runQuery input query = lift $ runQuery input query
+  query input q = lift $ query input q
   registerLiveListener t handler = lift $ registerLiveListenerRPC t handler
   unregisterLiveListener t = lift $ unregisterLiveListenerRPC t
   use ns db = lift $ useRPC ns db
@@ -122,6 +139,14 @@ instance ( MonadUnliftIO m
   let_ i v = lift $ letRPC i v
   unset i = lift $ unsetRPC i
   live tn = lift $ liveRPC tn
+  kill i = lift $ killRPC i
+  select t = lift $ selectRPC t
+  create t mVal = lift $ createRPC t mVal
+  insert tn vs = lift $ insertRPC tn vs
+  update t mVal = lift $ updateRPC t mVal
+  merge t mVal = lift $ mergeRPC t mVal
+  patch t vs  = lift $ patchRPC t vs
+  delete t = lift $ deleteRPC t
 
 runSurrealRPCT :: RPCConnectionState -> SurrealRPCT m a -> m a
 runSurrealRPCT cs action = runReaderT (unSurrealRPCT action) cs
@@ -137,8 +162,8 @@ rpcApp connMvar threadIDMvar respMap liveRespMap connection = do
   putMVar threadIDMvar tid
   forever $ do
     msg <- WS.receiveData connection
-    let rsp = decode msg :: Maybe Response
-        liveNotification = decode msg :: Maybe LiveNotification
+    let rsp = J.decode msg :: Maybe Response
+        liveNotification = J.decode msg :: Maybe LiveNotification
     case rsp of
       Just r@Response { .. } -> do
         mvarMap <- readTVarIO respMap
@@ -173,10 +198,10 @@ connectRPC ConnectionInfo { .. } = do
   reqIDTvar <- newTVarIO 0
   let connectionState = RPCConnectionState conn reqIDTvar respTVar liveRespTVar tid
   signinRes <- runSignIn connectionState $ sendRPC "signin"
-               [object [ "user" .= user
-                       , "pass" .= pass
-                       , "ns" .= ns
-                       , "db" .= db]]
+               [J.object [ "user" J..= user
+                         , "pass" J..= pass
+                         , "ns" J..= ns
+                         , "db" J..= db]]
   case signinRes of
     Right Response { error } ->
       if isNothing error
@@ -195,14 +220,14 @@ getNextRequestIDRPC = do
     writeTVar nextReqID $ nextID + 1
     return nextID
 
-sendRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Text -> [Value] -> m Response
+sendRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Text -> [J.Value] -> m Response
 sendRPC method params = do
   RPCConnectionState { .. } <- ask
   nextID <- getNextRequestIDRPC
   mvar <- newEmptyMVar
   atomically $ modifyTVar' respMap (M.insert nextID mvar)
   let req = Request nextID method params
-  liftIO $ WS.sendTextData conn $ encode req
+  liftIO $ WS.sendTextData conn $ J.encode req
   -- recover after 10 seconds of delay
   res <- race
     (do
@@ -214,37 +239,37 @@ sendRPC method params = do
     Right r -> return r
     Left e  -> throw e
 
-runQueryRPC :: MonadSurreal m => input -> Query input (Either DecodeError output) -> m output
-runQueryRPC input q = do
+queryRPC :: MonadSurreal m => input -> Query input (Either DecodeError output) -> m output
+queryRPC input q = do
   let encodedInput = getEncoder q input
-  Response { result = result, error = err } <- send "query" [String (getSQL q), encodedInput]
+  Response { result = result, error = err } <- send "query" [J.String (getSQL q), encodedInput]
   case err of
     Just e  -> throw e
     Nothing -> case result of
-      Just (Array arr) -> do
+      Just (J.Array arr) -> do
         results <- mapM checkForErrorsAndExtractResults arr
-        case getDecoder q $ fromMaybe Null (lastMay results) of
+        case getDecoder q $ fromMaybe J.Null (lastMay results) of
           Right r -> return r
           Left e  -> throw e
       v -> throw $ DecodeError
         $ "runQuery: Unexpected result format: expecting array but got: "
         <> pack (show v)
   where
-    checkForErrorsAndExtractResults :: MonadSurreal m => Value -> m Value
-    checkForErrorsAndExtractResults (Object o) = case o AKM.!? "status" of
-      Just (String "OK") -> case o AKM.!? "result" of
+    checkForErrorsAndExtractResults :: MonadSurreal m => J.Value -> m J.Value
+    checkForErrorsAndExtractResults (J.Object o) = case o AKM.!? "status" of
+      Just (J.String "OK") -> case o AKM.!? "result" of
         Just r -> return r
         Nothing -> throw $ DecodeError
           $ "runQuery: missing 'result' key in result map: " <> show o
       s -> throw $ DecodeError
         $ "runQuery: Unexpected status: "
         <> case s of
-             Just (String err) -> unpack err
-             a                 -> show $ fromMaybe "<NO STATUS MESSAGE>" a
+             Just (J.String err) -> unpack err
+             a                   -> show $ fromMaybe "<NO STATUS MESSAGE>" a
         <> ". "
         <> case o AKM.!? "result" of
-             Just (String msg) -> unpack msg
-             a                 -> show $ fromMaybe "<NO ERROR MESSAGE>" a
+             Just (J.String msg) -> unpack msg
+             a                   -> show $ fromMaybe "<NO ERROR MESSAGE>" a
     checkForErrorsAndExtractResults v = throw $ DecodeError
       $ "runQuery: Unexpected result format: expecting object but got: "
       <> pack (show v)
@@ -256,13 +281,13 @@ registerLiveListenerRPC uuid handler = do
 
 unregisterLiveListenerRPC :: ( MonadReader RPCConnectionState m, MonadUnliftIO m) => Text -> m ()
 unregisterLiveListenerRPC uuid = do
-  Response { error = err } <- sendRPC "query" [String $ "KILL \"" <> uuid <> "\";"]
+  Response { error = err } <- sendRPC "query" [J.String $ "KILL \"" <> uuid <> "\";"]
   forM_ err throw
   RPCConnectionState { .. } <- ask
   atomically $ modifyTVar' liveRespMap (M.delete uuid)
 
 -- | Makes sure the response contains no error and returns the value from the `result` key
-getResponseValue :: Response -> Either SurrealError (Maybe Value)
+getResponseValue :: Response -> Either SurrealError (Maybe J.Value)
 getResponseValue Response { result = result, error = err } =
   case err of
     Nothing -> Right result
@@ -270,23 +295,24 @@ getResponseValue Response { result = result, error = err } =
 
 useRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Namespace -> Database -> m ()
 useRPC ns db = do
-  r <- getResponseValue <$> sendRPC "use" [String $ toQL ns, String $ toQL db]
+  r <- getResponseValue <$> sendRPC "use" [J.String $ toQL ns, J.String $ toQL db]
   case r of
     Right _ -> return ()
     Left e  -> throw e
 
-infoRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => m (Maybe Value)
+infoRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => m (Maybe J.Value)
 infoRPC = do
   r <- getResponseValue <$> sendRPC "info" []
   case r of
     Right r' -> return r'
     Left e   -> throw e
 
-signupRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Namespace -> Database -> ScopeName -> KeyMap Value -> m (Maybe Value)
+signupRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) =>
+  Namespace -> Database -> ScopeName -> AKM.KeyMap J.Value -> m (Maybe J.Value)
 signupRPC ns db scope km = do
-  let p = Object $ ( AKM.insert "NS" (String $ toQL ns)
-                     . AKM.insert "DB" (String $ toQL db)
-                     . AKM.insert "SC" (String $ toQL scope) )
+  let p = J.Object $ ( AKM.insert "NS" (J.String $ toQL ns)
+                       . AKM.insert "DB" (J.String $ toQL db)
+                       . AKM.insert "SC" (J.String $ toQL scope) )
           km
   r <- getResponseValue <$> sendRPC "signup" [p]
   case r of
@@ -294,23 +320,23 @@ signupRPC ns db scope km = do
     Left e   -> throw e
 
 signinRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) =>
-  UserName -> Password -> Maybe Namespace -> Maybe Database -> Maybe ScopeName -> KeyMap Value -> m TokenValue
+  UserName -> Password -> Maybe Namespace -> Maybe Database -> Maybe ScopeName -> AKM.KeyMap J.Value -> m TokenValue
 signinRPC un pass ns db scope km = do
-  let p = Object $ ( AKM.insert "user" (String $ toQL un)
-                     . AKM.insert "pass" (String $ toQL pass)
-                     . AKM.insert "NS" (String $ toQL ns)
-                     . AKM.insert "DB" (String $ toQL db)
-                     . AKM.insert "SC" (String $ toQL scope) )
+  let p = J.Object $ ( AKM.insert "user" (J.String $ toQL un)
+                       . AKM.insert "pass" (J.String $ toQL pass)
+                       . AKM.insert "NS" (J.String $ toQL ns)
+                       . AKM.insert "DB" (J.String $ toQL db)
+                       . AKM.insert "SC" (J.String $ toQL scope) )
           km
   r <- getResponseValue <$> sendRPC "signin" [p]
   case r of
-    Right (Just (String r')) -> return r'
+    Right (Just (J.String r')) -> return r'
     Left e   -> throw e
     Right v -> throw $ DriverError $ "signinRPC: Unexpected response: " <> show v
 
 authenticateRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => TokenValue -> m ()
 authenticateRPC token = do
-  r <- getResponseValue <$> sendRPC "authenticate" [String token]
+  r <- getResponseValue <$> sendRPC "authenticate" [J.String token]
   case r of
     Right _ -> return ()
     Left e  -> throw e
@@ -322,24 +348,92 @@ invalidateRPC = do
     Right _ -> return ()
     Left e  -> throw e
 
-letRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Identifier -> Value -> m ()
+letRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Identifier -> J.Value -> m ()
 letRPC i v = do
-  r <- getResponseValue <$> sendRPC "let" [String $ toQL i, v]
+  r <- getResponseValue <$> sendRPC "let" [J.String $ toQL i, v]
   case r of
     Right _ -> return ()
     Left e  -> throw e
 
 unsetRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Identifier -> m ()
 unsetRPC i = do
-  r <- getResponseValue <$> sendRPC "unset" [String $ toQL i]
+  r <- getResponseValue <$> sendRPC "unset" [J.String $ toQL i]
   case r of
     Right _ -> return ()
     Left e  -> throw e
 
 liveRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => TableName -> m LiveQueryUUID
 liveRPC tn = do
-  r <- getResponseValue <$> sendRPC "live" [String $ toQL tn]
+  r <- getResponseValue <$> sendRPC "live" [J.String $ toQL tn]
   case r of
-    Right (Just (String r')) -> return r'
+    Right (Just (J.String r')) -> return r'
     Left e   -> throw e
     Right v -> throw $ DriverError $ "signinRPC: Unexpected response: " <> show v
+
+killRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => LiveQueryUUID -> m ()
+killRPC i = do
+  r <- getResponseValue <$> sendRPC "kill" [J.String $ toQL i]
+  case r of
+    Right _ -> return ()
+    Left e  -> throw e
+
+selectRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Text -> m (Maybe J.Value)
+selectRPC t = do
+  r <- getResponseValue <$> sendRPC "select" [J.String t]
+  case r of
+    Right r' -> return r'
+    Left e   -> throw e
+
+createRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Text -> Maybe J.Value -> m J.Value
+createRPC t mVal = do
+  r <- getResponseValue <$> sendRPC "create" (J.String t : case mVal of
+                                                 Just v -> [v]
+                                                 _      -> [])
+  case r of
+    Right (Just r') -> return r'
+    Right x -> throw $ DriverError $ "createRPC: Unexpected result: " <> show x
+    Left e   -> throw e
+
+insertRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => TableName -> [J.Value] -> m [J.Value]
+insertRPC tn vs = do
+  r <- getResponseValue <$> sendRPC "create" (J.String (toQL tn) : vs)
+  case r of
+    Right (Just (J.Array r')) -> return $ V.toList r'
+    Right x -> throw $ DriverError $ "insertRPC: Unexpected result: " <> show x
+    Left e   -> throw e
+
+updateRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Text -> Maybe J.Value -> m J.Value
+updateRPC t mVal = do
+  r <- getResponseValue <$> sendRPC "update" (J.String t : case mVal of
+                                                 Just v -> [v]
+                                                 _      -> [])
+  case r of
+    Right (Just r') -> return r'
+    Right x -> throw $ DriverError $ "updateRPC: Unexpected result: " <> show x
+    Left e   -> throw e
+
+mergeRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Text -> Maybe J.Value -> m J.Value
+mergeRPC t mVal = do
+  r <- getResponseValue <$> sendRPC "merge" (J.String t : case mVal of
+                                                 Just v -> [v]
+                                                 _      -> [])
+  case r of
+    Right (Just r') -> return r'
+    Right x -> throw $ DriverError $ "mergeRPC: Unexpected result: " <> show x
+    Left e   -> throw e
+
+patchRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Text -> [J.Value] -> m J.Value
+patchRPC t vs = do
+  r <- getResponseValue <$> sendRPC "patch" (J.String t : vs)
+  case r of
+    Right (Just r') -> return r'
+    Right x -> throw $ DriverError $ "patchRPC: Unexpected result: " <> show x
+    Left e   -> throw e
+
+deleteRPC :: (MonadUnliftIO m, MonadReader RPCConnectionState m) => Text -> m J.Value
+deleteRPC t = do
+  r <- getResponseValue <$> sendRPC "delete" [J.String t]
+  case r of
+    Right (Just r') -> return r'
+    Right x -> throw $ DriverError $ "patchRPC: Unexpected result: " <> show x
+    Left e   -> throw e
