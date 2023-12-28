@@ -38,6 +38,31 @@ main = catch
       print r)
   (\(e :: SomeException) -> putStrLn $ "cought exception: " <> pack (displayException e))
 
+simpleQuery1 :: MyApp (Maybe Value)
+simpleQuery1 = select (maybe (P.error "invalid identifier") (Table . TableName) (mkIdentifier "artist"))
+
+simpleQuery2 :: MyApp Value
+simpleQuery2 = query () [sql| (SELECT * FROM artist) :: Value; |]
+
+simpleQuery3 :: MyApp [Rec ("id" .== RecordID .+ "first_name" .== Text .+ "company_name" .== Maybe Text)]
+simpleQuery3 = query () [sql|
+                            SELECT id :: RecordID, first_name :: Text, company_name :: (Maybe Text)
+                            FROM artist;
+                            |]
+
+type Artist = Rec ("id" .== RecordID .+ "first_name" .== Text .+ "company_name" .== Maybe Text)
+
+simpleQuery4 :: MyApp (Vector Artist)
+simpleQuery4 = query () [sql| (SELECT * FROM artist) :: Vector Artist; |]
+
+simpleQuery5 :: MyApp (Vector Artist)
+simpleQuery5 = query (#last_name .== "Bekran")
+  [sql|
+      let $my_param = 123;
+      (SELECT * FROM artist
+      WHERE last_name = %last_name :: Text && some_other_field = $my_param) :: Vector Artist;
+      |]
+
 type TestRecType = Rec ("category" .== Text)
 type TestRecType2 = Rec ("id" .== RecordID .+ "cat" .== Vector TestRecType)
 type TestRecType3 = Rec ("id" .== RecordID .+ "name" .== Text .+ "fname" .== Maybe Text)
