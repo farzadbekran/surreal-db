@@ -29,7 +29,7 @@ library
       Database.Surreal.AST.Internal
       Database.Surreal.ASTJSON
       Database.Surreal.Core
-      Database.Surreal.ManualTest
+      Database.Surreal.Examples
       Database.Surreal.MonadSurreal
       Database.Surreal.Parser
       Database.Surreal.TH
