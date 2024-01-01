@@ -620,7 +620,7 @@ insertValues = label "insertValues" $ lexeme $ do
     tupleParser = lexeme $ betweenParens $ sepBy exp (lexeme $ char ',')
 
 insertVal :: Parser InsertVal
-insertVal = label "insertVal" $ lexeme $ choice
+insertVal = label "insertVal" $ lexeme $ choice $ map try
   [ insertObject
   , insertValues
   , InsertParam <$> param
@@ -631,6 +631,7 @@ insertE = label "insertE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "INSERT"
   mIgnore <- optional $ caseInsensitiveSymbol "IGNORE" $> IGNORE
   _ <- caseInsensitiveSymbol "INTO"
+  _ <- optional $ caseInsensitiveSymbol "TABLE"
   tn <- tableName
   InsertE mIgnore tn <$> insertVal
 
