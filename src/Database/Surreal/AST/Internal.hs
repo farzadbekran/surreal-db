@@ -678,9 +678,11 @@ instance HasInput OnDuplicate where
 data InsertVal
   = InsertObjects [Object]
   | InsertValues [Field] [[Exp]] (Maybe OnDuplicate)
+  | InsertParam Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL InsertVal where
+  toQL (InsertParam p) = toQL p
   toQL (InsertObjects os) = "[" <> foldl1 (<>) (intersperse "," $ map toQL os) <> "]"
   toQL (InsertValues fs es od)
     = "(" <> foldl1 (<>) (intersperse "," $ map toQL fs) <> ")"
@@ -696,6 +698,7 @@ instance ToQL InsertVal where
       renderTuple exps = "(" <> foldl1 (<>) (intersperse "," $ map toQL exps) <> ")"
 
 instance HasInput InsertVal where
+  getInputs (InsertParam p) = getInputs p
   getInputs (InsertObjects os) = concatMap getInputs os
   getInputs (InsertValues fs es od)
     = concatMap getInputs fs

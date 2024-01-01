@@ -623,6 +623,7 @@ insertVal :: Parser InsertVal
 insertVal = label "insertVal" $ lexeme $ choice
   [ insertObject
   , insertValues
+  , InsertParam <$> param
   ]
 
 insertE :: Parser Exp
