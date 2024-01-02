@@ -139,9 +139,6 @@ newtype EventName = EventName Identifier
 newtype FieldName = FieldName Identifier
   deriving (Eq, Generic, Read, Show, ToQL)
 
-newtype TypeName = TypeName Identifier
-  deriving (Eq, Generic, Read, Show, ToQL)
-
 newtype ParamName = ParamName Identifier
   deriving (Eq, Generic, Read, Show, ToQL)
 
@@ -1086,15 +1083,79 @@ data Flexible = Flexible
 data Optional = Optional
   deriving (Eq, Generic, Read, Show)
 
+data GeometryType
+  = Feature
+  | Point
+  | Line
+  | Polygon
+  | Multipoint
+  | Multiline
+  | Multipolygon
+  | Collection
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL GeometryType where
+  toQL = \case
+    Feature -> "feature"
+    Point -> "point"
+    Line -> "line"
+    Polygon -> "polygon"
+    Multipoint -> "multipoint"
+    Multiline -> "multiline"
+    Multipolygon -> "multipolygon"
+    Collection -> "collection"
+
+data DataType
+  = AnyT
+  | OrT DataType DataType
+  | OptionalT DataType
+  | ArrayT (Maybe (DataType, Maybe Int64))
+  | SetT (Maybe (DataType, Maybe Int64))
+  | RecordT [TableName]
+  | GeometryT [GeometryType]
+  | BoolT
+  | DateTimeT
+  | DecimalT
+  | DurationT
+  | FloatT
+  | IntT
+  | NumberT
+  | StringT
+  | ObjectT
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL DataType where
+  toQL = \case
+    AnyT -> "any"
+    OrT dt1 dt2 -> toQL dt1 <> " | " <> toQL dt2
+    OptionalT dt -> "option<" <> toQL dt <> ">"
+    ArrayT (Just (dt, Nothing)) -> "array<" <> toQL dt <> ">"
+    ArrayT (Just (dt, Just i)) -> "array<" <> toQL dt <> "," <> tshow i <> ">"
+    ArrayT Nothing -> "array"
+    SetT (Just (dt, Nothing)) -> "set<" <> toQL dt <> ">"
+    SetT (Just (dt, Just i)) -> "set<" <> toQL dt <> "," <> tshow i <> ">"
+    SetT Nothing -> "set"
+    RecordT tns -> "record<" <> (intercalate " | " $ map toQL tns) <> ">"
+    GeometryT gts -> "geometry<" <> (intercalate " | " $ map toQL gts) <> ">"
+    BoolT -> "bool"
+    StringT -> "string"
+    DateTimeT -> "datetime"
+    DecimalT -> "decimal"
+    DurationT -> "duration"
+    FloatT -> "float"
+    IntT -> "int"
+    NumberT -> "number"
+    ObjectT -> "object"
+
 data FieldType
-  = FieldType (Maybe Flexible) (Maybe Optional) TypeName
+  = FieldType (Maybe Flexible) DataType
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL FieldType where
-  toQL (FieldType flex optn tn)
+  toQL (FieldType flex dt)
     = maybe "" (const "FLEXIBLE ") flex
     <> "TYPE "
-    <> if isJust optn then "option<" <> toQL tn <> ">" else toQL tn
+    <> toQL dt
 
 data Tokenizer = BLANK | CAMEL | CLASS | PUNCT
   deriving (Eq, Generic, Read, Show)

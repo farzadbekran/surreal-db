@@ -1,1 +1,1 @@
-:set -XOverloadedStrings -XOverloadedLabels -XTypeApplications -XTemplateHaskell -XQuasiQuotes -XDataKinds -fobject-code
+:set -XOverloadedStrings -XOverloadedLabels -XTypeApplications -XTemplateHaskell -XQuasiQuotes -XDataKinds -XNoImplicitPrelude -fobject-code

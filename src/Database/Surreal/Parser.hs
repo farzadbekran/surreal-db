@@ -1079,14 +1079,84 @@ defEvent = label "defEvent" $ lexeme $ do
   _ <- caseInsensitiveSymbol "THEN"
   DefEvent (EventName en) tn whenE <$> exp
 
+arrayDef :: Parser (DataType, Maybe Int64)
+arrayDef = label "arrayDef" $ lexeme $ do
+  dt <- dataType
+  mLen <- optional $ lexeme (symbol ",") >> intParser
+  return (dt, mLen)
+
+arrayT :: Parser DataType
+arrayT = label "arrayT" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "array"
+  ad <- optional $ (between (char '<') (char '>') arrayDef <|>
+                    betweenParens arrayDef)
+  return $ ArrayT ad
+
+setT :: Parser DataType
+setT = label "setT" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "set"
+  ad <- optional $ (between (char '<') (char '>') arrayDef <|>
+                    betweenParens arrayDef)
+  return $ SetT ad
+
+recordT :: Parser DataType
+recordT = label "recordT" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "record"
+  tns <- (between (char '<') (char '>') (sepBy tableName (lexeme $ char '|')) <|>
+          betweenParens (sepBy tableName (lexeme $ char '|')))
+  return $ RecordT tns
+
+geometryType :: Parser GeometryType
+geometryType = label "geometryType" $ lexeme $ choice $ map try
+  [ caseInsensitiveSymbol "feature" $> Feature
+  , caseInsensitiveSymbol "point" $> Point
+  , caseInsensitiveSymbol "line" $> Line
+  , caseInsensitiveSymbol "polygon" $> Polygon
+  , caseInsensitiveSymbol "multipoint" $> Multipoint
+  , caseInsensitiveSymbol "multiline" $> Multiline
+  , caseInsensitiveSymbol "multipolygon" $> Multipolygon
+  , caseInsensitiveSymbol "collection" $> Collection
+  ]
+
+geometryT :: Parser DataType
+geometryT = label "geometryT" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "geometry"
+  gts <- (between (char '<') (char '>') (sepBy geometryType (lexeme $ char '|')) <|>
+          betweenParens (sepBy geometryType (lexeme $ char '|')))
+  return $ GeometryT gts
+
+-- order matters here, more specific first, ie ** before *
+dataTypeOperatorTable :: [[E.Operator Parser DataType]]
+dataTypeOperatorTable = [ [ E.InfixL (symbol "|" $> OrT) ] ]
+
+dataType :: Parser DataType
+dataType = E.makeExprParser dataTypeTerm dataTypeOperatorTable
+
+dataTypeTerm :: Parser DataType
+dataTypeTerm = label "dataType" $ lexeme $ choice $ map try
+  [ AnyT <$ caseInsensitiveSymbol "any"
+  , OptionalT <$> (caseInsensitiveSymbol "option" >> (between (char '<') (char '>') dataType <|>
+                                                      betweenParens dataType))
+  , arrayT
+  , setT
+  , recordT
+  , geometryT
+  , caseInsensitiveSymbol "string" $> StringT
+  , caseInsensitiveSymbol "bool" $> BoolT
+  , caseInsensitiveSymbol "datetime" $> DateTimeT
+  , caseInsensitiveSymbol "decimal" $> DecimalT
+  , caseInsensitiveSymbol "duration" $> DurationT
+  , caseInsensitiveSymbol "float" $> FloatT
+  , caseInsensitiveSymbol "int" $> IntT
+  , caseInsensitiveSymbol "number" $> NumberT
+  , caseInsensitiveSymbol "object" $> ObjectT
+  ]
+
 fieldType :: Parser FieldType
 fieldType = label "fieldType" $ lexeme $ do
   flex <- optional $ caseInsensitiveSymbol "FLEXIBLE" $> Flexible
   _ <- caseInsensitiveSymbol "TYPE"
-  mOptional <- optional $ try $ caseInsensitiveSymbol "option<" $> Optional
-  t <- identifier
-  when (isJust mOptional) $ void $ caseInsensitiveSymbol ">"
-  return $ FieldType flex mOptional (TypeName t)
+  FieldType flex <$> dataType
 
 defField :: Parser Define
 defField = label "defField" $ lexeme $ do
