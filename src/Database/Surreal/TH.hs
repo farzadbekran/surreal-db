@@ -100,7 +100,7 @@ getBlockResultDecoders (AST.Block ls) = do
 
 parseSQL :: String -> Q Exp
 parseSQL s = do
-  let blockAST = parse block "" s
+  let blockAST = parse blockStrict "" s
   case blockAST of
     Right ast -> do
       let inputs = getInputs ast

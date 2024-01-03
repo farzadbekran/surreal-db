@@ -371,14 +371,14 @@ ifThenE :: Parser Exp
 ifThenE = label "IfThenE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "IF"
   e1 <- exp
-  _ <- caseInsensitiveSymbol "THEN"
+  _ <- optional $ caseInsensitiveSymbol "THEN"
   IfThenE e1 <$> exp
 
 ifThenElseE :: Parser Exp
 ifThenElseE = label "IfThenElseE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "IF"
   e1 <- exp
-  _ <- caseInsensitiveSymbol "THEN"
+  _ <- optional $ caseInsensitiveSymbol "THEN"
   e2 <- exp
   _ <- caseInsensitiveSymbol "ELSE"
   IfThenElseE e1 e2 <$> exp
@@ -896,6 +896,7 @@ term = sc
               , edgeSelectorE
               , litE
               , InParenE <$> betweenParens exp
+              , BlockE <$> between (lexeme $ char '{') (lexeme $ char '}') block
               , constE
               ])
 
@@ -1355,13 +1356,13 @@ statement =
 expLine :: Parser SurQLLine
 expLine = lexeme $ do
   l <- ExpLine <$> exp
-  _ <- symbol ";"
+  _ <- (void $ symbol ";") <|> (void $ lookAhead (symbol "}")) <|> lookAhead eof
   return l
 
 statementLine :: Parser SurQLLine
 statementLine = lexeme $ do
   l <- StatementLine <$> statement
-  _ <- symbol ";"
+  _ <- (void $ symbol ";") <|> (void $ lookAhead (symbol "}")) <|> lookAhead eof
   return l
 
 surQLLine :: Parser SurQLLine
@@ -1375,6 +1376,13 @@ block = sc >> lexeme
   (do
     ls <- some surQLLine
     when (null ls) (fail "At least one SQL line expected!")
-    eof
     return $ Block ls
   )
+
+-- | strict version of block, makes sure the string ends after the blocks
+blockStrict :: Parser Block
+blockStrict = sc >> lexeme
+  (do
+    bl <- block
+    eof
+    return bl)

@@ -835,6 +835,7 @@ data Exp
   | InParenE Exp
   | InfoE InfoParam
   | ShowChangesE TableName (Maybe TimeStamp) (Maybe LIMIT)
+  | BlockE Block
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Exp where
@@ -932,6 +933,7 @@ instance ToQL Exp where
                    Just ts -> " SINCE " <> toQL ts
                    Nothing -> ""
                , toQL mLimit]
+    BlockE (Block ls) -> "{ " <> intercalate ";" (map toQL ls) <> " }"
 
 instance HasInput Exp where
   getInputs = \case
@@ -973,6 +975,7 @@ instance HasInput Exp where
     InParenE e -> getInputs e
     InfoE _ -> []
     ShowChangesE _ since limit -> getInputs since <> getInputs limit
+    BlockE (Block ls) -> concatMap getInputs ls
 
 data UserScope = USROOT | USNS | USDB
   deriving (Eq, Generic, Read, Show)

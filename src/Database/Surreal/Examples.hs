@@ -229,6 +229,10 @@ defineTest1 = do
                 FOR select,create WHERE f1 = 1
                 FOR delete WHERE (f2 = 2) OR (f3 = 3);
             DEFINE EVENT my_event ON test WHEN a = 1 THEN b = 2;
+            DEFINE EVENT create_rej ON users WHEN $before.profile != $after.profile THEN {
+              IF ((SELECT VALUE id FROM profiles) CONTAINSNOT $after.profile) {
+                throw "invalid profile id!";
+              }};
             DEFINE FIELD my_field ON TABLE test;
             DEFINE FIELD my_field ON TABLE test FLEXIBLE TYPE option<string>;
             DEFINE FIELD my_field ON TABLE test FLEXIBLE TYPE option<string>
@@ -246,6 +250,7 @@ defineTest1 = do
             DEFINE FIELD permissions.* ON TABLE acl TYPE string;
             (SELECT field1.* from test) :: Value;
             SELECT %p :: Text from test where $param.field[1] = 1;
+            
             (create test_table_2 set p.testField = /[A-Z]/) :: Value;
             |]
   query (#p .== "my val") q >>= print
