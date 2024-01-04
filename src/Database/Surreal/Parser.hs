@@ -67,13 +67,15 @@ parseType = lexeme $ maybeBetweenParens simpleType
 -- | Literals
 
 noneL :: Parser Literal
-noneL = label "NONE" $ lexeme $ symbol "NONE" $> NoneL
+noneL = label "NONE" $ lexeme $ caseInsensitiveSymbol "NONE" $> NoneL
 
 nullL :: Parser Literal
-nullL = label "NULL" $ lexeme $ symbol "NULL" $> NoneL
+nullL = label "NULL" $ lexeme $ caseInsensitiveSymbol "NULL" $> NoneL
 
 boolL :: Parser Literal
-boolL = label "Bool" $ lexeme $ BoolL False <$ symbol "False" <|> BoolL False <$ symbol "True"
+boolL = label "Bool" $ lexeme $
+  BoolL False <$ caseInsensitiveSymbol "False" <|>
+  BoolL False <$ caseInsensitiveSymbol "True"
 
 quotedText :: Parser Text
 quotedText = label "quotedText" $ lexeme $ pack <$>
@@ -89,8 +91,8 @@ intParser = label "Int64" $ do
   let mr = readMay s :: Maybe Int64
     in
     case mr of
-      Just r -> return r
-      _      -> fail "Invalid Int64"
+      Just r  -> return r
+      Nothing -> fail "Invalid Int64"
 
 floatParser :: Parser Float
 floatParser = label "Float" $ do
@@ -98,8 +100,8 @@ floatParser = label "Float" $ do
   let mr = readMay s :: Maybe Float
     in
     case mr of
-      Just r -> return r
-      _      -> fail "Invalid Float"
+      Just r  -> return r
+      Nothing -> fail "Invalid Float"
 
 int64L :: Parser Literal
 int64L = label "Int64L" $ lexeme $ Int64L <$> L.signed sc intParser
@@ -850,6 +852,11 @@ operatorTable = [ [ E.Postfix typedExp
                   , E.InfixN (symbol "<" $> OPE (:<))
                   , E.InfixN (symbol "=" $> OPE (:=))
                   , E.InfixN (symbol "~" $> OPE (:~))
+                  , E.InfixN (symbol "INSIDE" $> OPE INSIDE)
+                  , E.InfixN (symbol "NOTINSIDE" $> OPE NOTINSIDE)
+                  , E.InfixN (symbol "ALLINSIDE" $> OPE ALLINSIDE)
+                  , E.InfixN (symbol "ANYINSIDE" $> OPE ANYINSIDE)
+                  , E.InfixN (symbol "NONEINSIDE" $> OPE NONEINSIDE)
                   , E.InfixN (symbol "IN" $> OPE IN)
                   , E.InfixN (symbol "NOTIN" $> OPE NOTIN)
                   , E.InfixN (symbol "CONTAINSNOT" $> OPE CONTAINSNOT)
@@ -857,11 +864,6 @@ operatorTable = [ [ E.Postfix typedExp
                   , E.InfixN (symbol "CONTAINSANY" $> OPE CONTAINSANY)
                   , E.InfixN (symbol "CONTAINSNONE" $> OPE CONTAINSNONE)
                   , E.InfixN (symbol "CONTAINS" $> OPE CONTAINS)
-                  , E.InfixN (symbol "INSIDE" $> OPE INSIDE)
-                  , E.InfixN (symbol "NOTINSIDE" $> OPE NOTINSIDE)
-                  , E.InfixN (symbol "ALLINSIDE" $> OPE ALLINSIDE)
-                  , E.InfixN (symbol "ANYINSIDE" $> OPE ANYINSIDE)
-                  , E.InfixN (symbol "NONEINSIDE" $> OPE NONEINSIDE)
                   , E.InfixN (symbol "OUTSIDE" $> OPE OUTSIDE)
                   , E.InfixN (symbol "INTERSECTS" $> OPE INTERSECTS)
                   , E.InfixN (symbol "@@" $> OPE (:@@))

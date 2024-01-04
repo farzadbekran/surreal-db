@@ -1,6 +1,6 @@
 # surreal-db
 Haskell driver for [SurrealDB](https://surrealdb.com). Currently uses SurrealDB's [JSON RPC](https://docs.surrealdb.com/docs/integration/websocket)
-integration model. The `query` procedure has been enhanced to be type-safe. See [Using query](##Using query).
+integration model. The `query` procedure has been enhanced to be type-safe. See [Using query](##Using-query).
 
 Tested and developed using SurrealDB v1.0.2
 
