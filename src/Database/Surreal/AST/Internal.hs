@@ -5,6 +5,7 @@
 {-# OPTIONS_GHC -Wno-deriving-defaults #-}
 {-# LANGUAGE NamedFieldPuns  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Database.Surreal.AST.Internal where
 
@@ -45,6 +46,9 @@ instance (HasInput a, HasInput b) => HasInput (Either a b) where
 newtype Identifier
   = Ident Text
   deriving (Eq, Generic, Read, Show)
+
+pattern ID :: Text -> Identifier
+pattern ID t <- Ident t
 
 instance ToQL Identifier where
   toQL (Ident t) = t
