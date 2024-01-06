@@ -17,6 +17,7 @@ import           Data.Foldable        hiding ( elem, notElem )
 import           Data.Row
 import           Database.Surreal.AST as AST
 import qualified Language.Haskell.TH  as TH
+import Data.Char (isUpper)
 
 getFieldLabel :: MonadFail m => Field -> m Text
 getFieldLabel = \case
@@ -118,9 +119,14 @@ getBaseType = \case
 -- | converts `TypeDef` to TH type definition AST
 mkType :: TypeDef -> TH.Type
 mkType (T name params) = case reverse params of
-  []   -> TH.ConT (TH.mkName name)
-  t:ts -> TH.AppT (prepend (TH.ConT (TH.mkName name)) (reverse ts)) (mkType t)
+    []   -> constructor (TH.mkName name)
+    t:ts -> TH.AppT (prepend (constructor (TH.mkName name)) (reverse ts)) (mkType t)
   where
+    constructor :: TH.Name -> TH.Type
+    constructor = case isUpper <$> headMay name of
+      Just True -> TH.ConT
+      Just False -> TH.VarT
+      Nothing -> error "mkType: Empty type name!"
     prepend t ts = case reverse ts of
       []     -> t
       t':ts' -> TH.AppT (prepend t (reverse ts')) (mkType t')
