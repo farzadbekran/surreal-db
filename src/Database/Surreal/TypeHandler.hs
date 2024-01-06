@@ -123,10 +123,7 @@ mkType (T name params) = case reverse params of
     t:ts -> TH.AppT (prepend (constructor (TH.mkName name)) (reverse ts)) (mkType t)
   where
     constructor :: TH.Name -> TH.Type
-    constructor = case isUpper <$> headMay name of
-      Just True -> TH.ConT
-      Just False -> TH.VarT
-      Nothing -> error "mkType: Empty type name!"
+    constructor = if (isUpper <$> headMay name) == Just True || name == "()" then TH.ConT else TH.VarT
     prepend t ts = case reverse ts of
       []     -> t
       t':ts' -> TH.AppT (prepend t (reverse ts')) (mkType t')
