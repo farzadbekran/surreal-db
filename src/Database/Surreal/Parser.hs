@@ -11,6 +11,7 @@ import           ClassyPrelude                  hiding ( bool, exp, group,
                                                   try )
 import qualified Control.Monad.Combinators.Expr as E
 import           Control.Monad.Fail             ( MonadFail (..) )
+import           Data.Char                      ( isAlpha, isLower, isAlphaNum )
 import           Data.Foldable                  ( foldl )
 import           Data.Time.ISO8601              ( parseISO8601 )
 import           Data.Void
@@ -52,17 +53,33 @@ identifier = lexeme $ do
 
 -- | Type Parsers
 
+typeVar :: Parser Text
+typeVar = lexeme $ do
+  c <- takeWhile1P Nothing isAlpha
+  case c of
+    [c'] -> if isLower c'
+      then return $ pack c
+      else fail "Invalid type varible!"
+    _otherwise -> fail "Invalid type varible!"
+
+nestedType :: Parser TypeDef
+nestedType = lexeme $ do
+  prefix <- lexeme $ takeWhile1P Nothing isAlphaNum
+  postfix <- many parseType
+  return $ T prefix postfix
+
 simpleType :: Parser TypeDef
-simpleType = do
-  prefix <- try $ lexeme (parseCapitalWord <|> symbol "()")
-  postfix <- many
-    $ try
-    $ lexeme
-    $ between (char '(') (char ')') simpleType <|> typeCon
-  return $ T (unpack prefix) postfix
+simpleType = lexeme $ choice
+  [ do
+      t <- lexeme $ takeWhile1P Nothing isAlphaNum
+      return $ T t []
+  , do
+      _ <- symbol "()"
+      return $ T "()" []
+  ]
 
 parseType :: Parser TypeDef
-parseType = lexeme $ maybeBetweenParens simpleType
+parseType = lexeme $ try (betweenParens nestedType) <|> simpleType
 
 -- | Literals
 
@@ -362,7 +379,7 @@ param :: Parser Param
 param = label "Param" $ lexeme $ choice
   [ do _ <- char '$'
        SQLParam . ParamName <$> identifier
-  , maybeBetweenParens $ do
+  , do
       _ <- char '%'
       n <- ParamName <$> identifier
       _ <- lexeme $ symbol "::"

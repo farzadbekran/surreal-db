@@ -82,12 +82,19 @@ simpleQuery2 :: MyApp Value
 simpleQuery2 = query () [sql| (SELECT * FROM artist) :: Value; |]
 ```
 
-The result of queries is definedd by the result of the last expression in the query.
+The result of queries is defined by the result of the last expression in the query.
 SurrealDB returns a result for each and every expression, but it seems to me that it just adds noise to the results.
 So currently the library only returns the last result. This might change in the future if it becomes unavoidable.
 So to give the type of the query result, we annotate the last expression with the result we expect.
 Note that now the result of the query is `Value`, which means it could be `Null` (`null` JSON value, defined by `Aeson`).
 There are multiple ways to fix that if getting a `Value` is undesirable:
+
+### Type Annotations
+Several parts of the queries support type annotations:
+- selector fields in select expressions: `select name :: Text, company_name :: (Maybe Text) from users`
+- expressions as a whole: `(select name, company_name from users) :: (Vector MyTypeSyn)`
+
+Simple types like `Text` or `Bool` don't require parens but constructed types like `(Maybe Text)` do require them.
 
 ### Adding Type Annotations To Fields
 Instead of the wildcard selector (`*`), we can be explicit about fields and add type annotations to each field:
@@ -100,7 +107,7 @@ simpleQuery3 = query () [sql|
                             |]
 ```
 
-If we give the fields type annotations, the field names and types will be combined to give us a `Rec` type. 
+If we give the fields type annotations, the field names and types will be combined to give us a `Rec` type.
 This will now give us the type `[Rec ("id" .== RecordID .+ "first_name" .== Text .+ "company_name" .== Maybe Text)]`.
 
 ### Adding Type Annotations To Expressions
@@ -111,7 +118,7 @@ we can define a type synonym and use that in our queries and as the result types
 type Artist = Rec ("id" .== RecordID .+ "first_name" .== Text .+ "company_name" .== Maybe Text)
 
 simpleQuery4 :: MyApp (Vector Artist)
-simpleQuery4 = query () [sql| (SELECT * FROM artist) :: Vector Artist; |]
+simpleQuery4 = query () [sql| (SELECT * FROM artist) :: (Vector Artist); |]
 ```
 
 This will make things clean and readable. Note that instead of annotating the fields, we have now annotated the
@@ -129,7 +136,7 @@ simpleQuery5 = query (#last_name .== "Bekran")
   [sql|
       let $my_param = 123;
       (SELECT * FROM artist
-      WHERE last_name = %last_name :: Text && some_other_field = $my_param) :: Vector Artist;
+      WHERE last_name = %last_name :: Text && some_other_field = $my_param) :: (Vector Artist);
       |]
 ```
 

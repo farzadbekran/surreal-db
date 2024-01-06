@@ -53,14 +53,14 @@ simpleQuery3 = query () [sql|
 type Artist = Rec ("id" .== RecordID .+ "first_name" .== Text .+ "company_name" .== Maybe Text)
 
 simpleQuery4 :: MyApp (Vector Artist)
-simpleQuery4 = query () [sql| (SELECT * FROM artist) :: Vector Artist; |]
+simpleQuery4 = query () [sql| (SELECT * FROM artist) :: (Vector Artist); |]
 
 simpleQuery5 :: MyApp (Vector Artist)
 simpleQuery5 = query (#last_name .== "Bekran")
   [sql|
       let $my_param = 123;
       (SELECT * FROM artist
-      WHERE last_name = %last_name :: Text && some_other_field = $my_param) :: Vector Artist;
+      WHERE last_name = %last_name :: Text && some_other_field = $my_param) :: (Vector Artist);
       |]
 
 type TestRecType = Rec ("category" .== Text)
@@ -71,12 +71,12 @@ test :: MyApp [Int]
 test = do
   let q =
         [sql|
-            select id :: Text, ->create->product AS cat :: (Vector TestRecType)
+            select id :: (Text), ->create->product AS cat :: (Vector TestRecType)
             from artist:00b2pg847d7b8r08t08t..
-            where name = %name :: Text && fname = %fname :: Int64
+            where name = %name :: (Text) && fname = %fname :: (Int64)
             limit 2
             fetch cat;
-            select 1 + 2 as ppp :: Int from artist limit 1;
+            select 1 + 2 as ppp :: (Int) from artist limit 1;
             |]
       q' = dimap (\(txt, i) -> #name .== txt .+ #fname .== i) (\r -> map (.! #ppp) <$> r) q
   putStr (getSQL q')
@@ -105,7 +105,7 @@ test2 = do
         [sql|
             (select *, ->create->product AS cat
             from artist
-            where id = %id :: RecordID
+            where id = %id :: (RecordID)
             limit 2
             fetch cat) :: (Vector TestRecType2);
             |]
@@ -120,7 +120,7 @@ insertTest = do
         [sql|
             (INSERT INTO test (id, name, fname)
             VALUES (test:uuid(), %v1 :: Text, %v2 :: Text), ("test:farzad2", "farzad2", "bekran2")
-            ON DUPLICATE KEY UPDATE numUpdate += 1) :: Vector TestRecType3;
+            ON DUPLICATE KEY UPDATE numUpdate += 1) :: (Vector TestRecType3);
             |]
   query (#v1 .== "inputval1" .+ #v2 .== "inputval \" 2") q >>= print
 
@@ -128,7 +128,7 @@ insertTest2 :: MyApp ()
 insertTest2 = do
   let q =
         [sql|
-            INSERT INTO test { name : %v1 :: Text, fname : %v2 :: Text } :: Vector TestRecType3;
+            INSERT INTO test { name : %v1 :: Text, fname : %v2 :: Text } :: (Vector TestRecType3);
             |]
   query (#v1 .== "v1" .+ #v2 .== "v2") q >>= print
 
@@ -136,7 +136,8 @@ insertTest3 :: MyApp ()
 insertTest3 = do
   let q =
         [sql|
-            INSERT INTO test [{id : test:uuid(), name : "farzad", fname : "bekran" },{ name : "farzad2", fname : "bekran2" }] :: Vector TestRecType3;
+            INSERT INTO test [ {id : test:uuid(), name : "farzad", fname : "bekran" }
+                             , { name : "farzad2", fname : "bekran2" }] :: (Vector TestRecType3);
             |]
   query () q >>= print
 
@@ -144,7 +145,7 @@ createTest1 :: MyApp ()
 createTest1 = do
   let q =
         [sql|
-            (CREATE test CONTENT {name: "farzad create", fname: "bekran"}) :: Vector TestRecType3;
+            (CREATE test CONTENT {name: "farzad create", fname: "bekran"}) :: (Vector TestRecType3);
             |]
   query () q >>= print
 
@@ -152,7 +153,7 @@ createTest2 :: MyApp ()
 createTest2 = do
   let q =
         [sql|
-            (CREATE test SET name = "farzad create2", fname = "bekran") :: Vector TestRecType3;
+            (CREATE test SET name = "farzad create2", fname = "bekran") :: (Vector TestRecType3);
             |]
   query () q >>= print
 
@@ -160,7 +161,7 @@ createTest3 :: MyApp ()
 createTest3 = do
   let q =
         [sql|
-            (CREATE test SET name = "farzad create3", fname = "bekran" RETURN id, name, fname) :: Vector TestRecType3;
+            (CREATE test SET name = "farzad create3", fname = "bekran" RETURN id, name, fname) :: (Vector TestRecType3);
             |]
   query () q >>= print
 
@@ -249,8 +250,7 @@ defineTest1 = do
             DEFINE INDEX my_index ON test FIELDS f1,f2 SEARCH ANALYZER my_analyzer BM25(0.1,0.2);
             DEFINE FIELD permissions.* ON TABLE acl TYPE string;
             (SELECT field1.* from test) :: Value;
-            SELECT %p :: Text from test where $param.field[1] = 1;
-            
+            SELECT %p :: (Text) from test where $param.field[1] = 1;
             (create test_table_2 set p.testField = /[A-Z]/) :: Value;
             |]
   query (#p .== "my val") q >>= print
@@ -271,7 +271,7 @@ returnTest = do
         [sql| let $r = select id :: Text, ->create->product AS cat :: (Vector TestRecType)
                        from artist:00b2pg847d7b8r08t08t..
                        fetch cat;
-              return $r :: Vector TestRecType2;
+              return $r :: (Vector TestRecType2);
             |]
   query () q >>= print
 
@@ -282,7 +282,7 @@ txTest :: MyApp ()
 txTest = do
   let q = [sql|
               begin;
-              (INSERT INTO test { name : "tx-farzad", fname : "tx-bekran" }) :: Vector Value;
+              (INSERT INTO test { name : "tx-farzad", fname : "tx-bekran" }) :: (Vector Value);
               LET $res = select id from test limit 1;
               commit;
               return $res :: Value;
