@@ -710,6 +710,7 @@ data Target
   = TargetTable TableName
   | TargetRecID RecordID
   | TargetEdge RecordID [Edge]
+  | TargetParam Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Target where
@@ -717,15 +718,17 @@ instance ToQL Target where
   toQL (TargetRecID rid) = toQL rid
   toQL (TargetEdge rid es) =
     foldl1 (<>) $ toQL rid : map toQL es
+  toQL (TargetParam p)  = toQL p
 
 instance HasInput Target where
   getInputs = \case
     TargetTable _ -> []
     TargetRecID rid -> getInputs rid
     TargetEdge rid es -> getInputs rid <> concatMap getInputs es
+    TargetParam p -> getInputs p
 
 data CreateVal
-  = CreateObject Object
+  = CreateObject Exp
   | CreateValues [(Field, Exp)]
   deriving (Eq, Generic, Read, Show)
 
@@ -743,16 +746,16 @@ instance HasInput CreateVal where
       getTupleInputs (f,v) = getInputs f <> getInputs v
 
 data UpdateVal
-  = UpdateObject Object
+  = UpdateObject Exp
   | UpdateValues [(Field, Exp)]
-  | UpdateMerge Object
-  | UpdatePatch Object
+  | UpdateMerge Exp
+  | UpdatePatch Exp
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL UpdateVal where
   toQL (UpdateObject o)  = "CONTENT " <> toQL o
   toQL (UpdateMerge o)  = "MERGE " <> toQL o
-  toQL (UpdatePatch o)  = "Patch " <> toQL o
+  toQL (UpdatePatch o)  = "PATCH " <> toQL o
   toQL (UpdateValues fields) = prepText $ "SET" : intersperse "," (map renderTuple fields)
     where
       renderTuple (f,v) = toQL f <> " = " <> toQL v

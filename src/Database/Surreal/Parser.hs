@@ -667,12 +667,13 @@ target = label "target" $ lexeme $ choice $ map try
   [ targetEdge
   , TargetRecID <$> recordID
   , TargetTable <$> tableName
+  , TargetParam <$> param
   ]
 
 createObject :: Parser CreateVal
 createObject = label "createObject" $ lexeme $ do
   _ <- caseInsensitiveSymbol "CONTENT"
-  CreateObject <$> object_
+  CreateObject <$> exp
 
 createValues :: Parser CreateVal
 createValues = label "createValues" $ lexeme $ do
@@ -695,17 +696,17 @@ createVal = label "createVal" $ lexeme $ choice
 updateObject :: Parser UpdateVal
 updateObject = label "updateObject" $ lexeme $ do
   _ <- caseInsensitiveSymbol "CONTENT"
-  UpdateObject <$> object_
+  UpdateObject <$> exp
 
 updateMerge :: Parser UpdateVal
 updateMerge = label "updateMerge" $ lexeme $ do
   _ <- caseInsensitiveSymbol "MERGE"
-  UpdateMerge <$> object_
+  UpdateMerge <$> exp
 
 updatePatch :: Parser UpdateVal
 updatePatch = label "updatePatch" $ lexeme $ do
   _ <- caseInsensitiveSymbol "PATCH"
-  UpdatePatch <$> object_
+  UpdatePatch <$> exp
 
 updateValues :: Parser UpdateVal
 updateValues = label "updateValues" $ lexeme $ do
