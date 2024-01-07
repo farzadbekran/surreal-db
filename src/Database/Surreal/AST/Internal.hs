@@ -832,7 +832,7 @@ data Exp
   | EdgeSelectorE (Maybe Field) [Edge]
   | SelectE (Maybe VALUE) Selectors (Maybe OMIT) FROM (Maybe WHERE) (Maybe SPLIT) (Maybe GROUP) (Maybe ORDER) (Maybe LIMIT) (Maybe START) (Maybe FETCH) (Maybe TIMEOUT) (Maybe PARALLEL) (Maybe EXPLAIN)
   | LiveSelectE (Maybe VALUE) (Either DIFF Selectors) FROM (Maybe WHERE) (Maybe FETCH)
-  | InsertE (Maybe IGNORE) TableName InsertVal
+  | InsertE (Maybe IGNORE) Target InsertVal
   | CreateE (Maybe ONLY) Target CreateVal (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
   | DeleteE (Maybe ONLY) Target (Maybe WHERE) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
   | UpdateE (Maybe ONLY) Target UpdateVal (Maybe WHERE) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)

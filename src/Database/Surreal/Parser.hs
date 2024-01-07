@@ -650,9 +650,8 @@ insertE = label "insertE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "INSERT"
   mIgnore <- optional $ caseInsensitiveSymbol "IGNORE" $> IGNORE
   _ <- caseInsensitiveSymbol "INTO"
-  _ <- optional $ caseInsensitiveSymbol "TABLE"
-  tn <- tableName
-  InsertE mIgnore tn <$> insertVal
+  t <- target
+  InsertE mIgnore t <$> insertVal
 
 targetEdge :: Parser Target
 targetEdge = label "targetEdge" $ lexeme $ do
