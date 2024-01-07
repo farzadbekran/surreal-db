@@ -967,8 +967,8 @@ instance HasInput Exp where
       <> getInputs from
       <> maybe [] getInputs mWhere
       <> maybe [] getInputs mFetch
-    InsertE _ _ insertVal
-      -> getInputs insertVal
+    InsertE _ target insertVal
+      -> getInputs target <> getInputs insertVal
     CreateE _ target v _ _ _
       -> getInputs target <> getInputs v
     UpdateE _ target v mWhere _ _ _
