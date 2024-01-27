@@ -31,8 +31,8 @@ lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
 
 -- | Parse the exact String given
-symbol :: String -> Parser Text
-symbol s = pack <$> L.symbol sc s
+symbol :: String -> Parser String
+symbol s = L.symbol sc s
 
 -- | Match the string 's', accepting either lowercase or uppercase form of each character
 caseInsensitiveSymbol :: String -> Parser String
@@ -104,8 +104,9 @@ textL = label "TextL" $ lexeme $ TextL <$> quotedText
 
 intParser :: Parser Int64
 intParser = label "Int64" $ do
+  mNeg <- optional (symbol "-")
   s <- some numberChar
-  let mr = readMay s :: Maybe Int64
+  let mr = readMay (fromMaybe "" mNeg <> s) :: Maybe Int64
     in
     case mr of
       Just r  -> return r
@@ -113,8 +114,9 @@ intParser = label "Int64" $ do
 
 floatParser :: Parser Float
 floatParser = label "Float" $ do
-  s <- some numberChar <> (unpack <$> symbol ".") <> some numberChar
-  let mr = readMay s :: Maybe Float
+  mNeg <- optional (symbol "-")
+  s <- some numberChar <> symbol "." <> some numberChar
+  let mr = readMay (fromMaybe "" mNeg <> s) :: Maybe Float
     in
     case mr of
       Just r  -> return r
