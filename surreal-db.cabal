@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.35.2.
+-- This file has been generated from package.yaml by hpack version 0.36.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -29,14 +29,14 @@ library
       Database.Surreal.AST.Internal
       Database.Surreal.ASTJSON
       Database.Surreal.Core
+      Database.Surreal.Effect
+      Database.Surreal.Effect.Handlers.RPC
+      Database.Surreal.Effect.Handlers.RPCTypes
       Database.Surreal.Examples
-      Database.Surreal.MonadSurreal
       Database.Surreal.Parser
       Database.Surreal.TH
       Database.Surreal.TypeHandler
       Database.Surreal.Types
-      Database.Surreal.WS.RPC
-      Database.Surreal.WS.RPCTypes
   other-modules:
       Paths_surreal_db
   hs-source-dirs:
@@ -45,7 +45,12 @@ library
       OverloadedLabels
       OverloadedStrings
       NoImplicitPrelude
-  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+      FlexibleContexts
+      ScopedTypeVariables
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fplugin=Effectful.Plugin
   build-depends:
       Decimal
     , aeson
@@ -53,6 +58,10 @@ library
     , bytestring
     , classy-prelude
     , containers
+    , effectful
+    , effectful-core
+    , effectful-plugin
+    , effectful-th
     , exceptions
     , first-class-families
     , iso8601-time
@@ -82,7 +91,12 @@ test-suite surreal-db-test
       OverloadedLabels
       OverloadedStrings
       NoImplicitPrelude
-  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+      FlexibleContexts
+      ScopedTypeVariables
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fplugin=Effectful.Plugin -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       Decimal
     , aeson
@@ -90,6 +104,10 @@ test-suite surreal-db-test
     , bytestring
     , classy-prelude
     , containers
+    , effectful
+    , effectful-core
+    , effectful-plugin
+    , effectful-th
     , exceptions
     , first-class-families
     , iso8601-time

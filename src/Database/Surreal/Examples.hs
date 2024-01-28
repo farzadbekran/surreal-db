@@ -1,50 +1,72 @@
+{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedLabels           #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE QuasiQuotes                #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeOperators              #-}
 
 module Database.Surreal.Examples where
 
-import           ClassyPrelude         as P
+import           ClassyPrelude              as P
+import           Control.Exception
 import           Data.Aeson
 import           Data.Profunctor
 import           Data.Row
-import           Data.Row.Aeson        ()
+import           Data.Row.Aeson             ()
 import           Database.Surreal.Core
+import           Effectful
+import           Effectful.Dispatch.Dynamic
+import           Effectful.Error.Dynamic
+import           Effectful.TH
 
 newtype MyAppState
   = MyAppState { someOtherState :: Text }
 
-type MyApp a
-  = ReaderT MyAppState (SurrealRPCT IO) a
+data MyAppEffect :: Effect where
+  GetState :: MyAppEffect m MyAppState
+  LogMessage :: Text -> MyAppEffect m ()
 
-runMyApp :: MyApp a -> IO a
-runMyApp m = do
-  cs <- connectRPC defaultConnectionInfo
-  let appState = MyAppState "some other state"
-  runSurrealRPCT cs (runReaderT m appState)
+makeEffect ''MyAppEffect
 
-main :: IO ()
-main = catch
-  (do
-      r <- runMyApp test
-      print r)
-  (\(e :: SomeException) -> putStrLn $ "cought exception: " <> pack (displayException e))
+runMyAppEffectIO :: (IOE :> es) => Eff (MyAppEffect : es) a -> Eff es a
+runMyAppEffectIO = interpret
+  (\_ -> \case
+      GetState -> return $ MyAppState "some dummy state"
+      LogMessage t -> liftIO $ print t)
 
-simpleQuery1 :: MyApp (Maybe Value)
+type AppEffs = [MyAppEffect, Surreal, Error RPCError, IOE]
+
+runApp :: Eff AppEffs a -> IO a
+runApp m = do
+  eConn <- runEff $ runError $ connectRPC defaultConnectionInfo
+  case eConn of
+    Right cs -> do
+      eR <- runEff $ runError $ runSurrealRPC cs $ runMyAppEffectIO m
+      case eR of
+        Right r -> return r
+        Left a  -> handleErr a
+    Left a -> handleErr a
+  where
+    handleErr (callStack, e) = do
+      print e
+      putStrLn $ pack $ prettyCallStack callStack
+      throw e
+
+simpleQuery1 :: Eff AppEffs (Maybe Value)
 simpleQuery1 = select (maybe (P.error "invalid identifier") (Table . TableName) (mkIdentifier "artist"))
 
-simpleQuery2 :: MyApp Value
+simpleQuery2 :: Eff AppEffs Value
 simpleQuery2 = query () [sql| (SELECT * FROM artist) :: Value; |]
 
-simpleQuery3 :: MyApp [Rec ("id" .== RecordID .+ "first_name" .== Text .+ "company_name" .== Maybe Text)]
+simpleQuery3 :: Eff AppEffs [Rec ("id" .== RecordID .+ "first_name" .== Text .+ "company_name" .== Maybe Text)]
 simpleQuery3 = query () [sql|
                             SELECT id :: RecordID, first_name :: Text, company_name :: (Maybe Text)
                             FROM artist;
@@ -52,10 +74,10 @@ simpleQuery3 = query () [sql|
 
 type Artist = Rec ("id" .== RecordID .+ "first_name" .== Text .+ "company_name" .== Maybe Text)
 
-simpleQuery4 :: MyApp (Vector Artist)
+simpleQuery4 :: Eff AppEffs (Vector Artist)
 simpleQuery4 = query () [sql| (SELECT * FROM artist) :: (Vector Artist); |]
 
-simpleQuery5 :: MyApp (Vector Artist)
+simpleQuery5 :: Eff AppEffs (Vector Artist)
 simpleQuery5 = query (#last_name .== "Bekran")
   [sql|
       let $my_param = 123;
@@ -67,7 +89,7 @@ type TestRecType = Rec ("category" .== Text)
 type TestRecType2 = Rec ("id" .== RecordID .+ "cat" .== Vector TestRecType)
 type TestRecType3 = Rec ("id" .== RecordID .+ "name" .== Text .+ "fname" .== Maybe Text)
 
-test :: MyApp [Int]
+test :: Eff AppEffs [Int]
 test = do
   let q =
         [sql|
@@ -82,7 +104,7 @@ test = do
   putStr (getSQL q')
   query ("my-name", 123) q'
 
-testLiveQuery :: MyApp ()
+testLiveQuery :: Eff AppEffs ()
 testLiveQuery = do
   let q = [sql|
               live select * from artist;
@@ -93,13 +115,13 @@ testLiveQuery = do
   print uuid
   registerLiveListener uuid handler
   --unregisterLiveListener uuid
-  _ <- tryAny $ unregisterLiveListener "invalid uuid" -- this causes an error on db side
+  --_ <- tryAny $ unregisterLiveListener "invalid uuid" -- this causes an error on db side
   _ <- forever $ do
     r <- takeMVar listenMvar
     putStrLn $ "received live notification: " <> tshow r
   return ()
 
-test2 :: MyApp ()
+test2 :: Eff AppEffs ()
 test2 = do
   let q =
         [sql|
@@ -114,7 +136,7 @@ test2 = do
   putStr (getSQL q)
   query (#id .== rid) q >>= print
 
-insertTest :: MyApp ()
+insertTest :: Eff AppEffs ()
 insertTest = do
   let q =
         [sql|
@@ -124,7 +146,7 @@ insertTest = do
             |]
   query (#v1 .== "inputval1" .+ #v2 .== "inputval \" 2") q >>= print
 
-insertTest2 :: MyApp ()
+insertTest2 :: Eff AppEffs ()
 insertTest2 = do
   let q =
         [sql|
@@ -132,7 +154,7 @@ insertTest2 = do
             |]
   query (#v1 .== "v1" .+ #v2 .== "v2") q >>= print
 
-insertTest3 :: MyApp ()
+insertTest3 :: Eff AppEffs ()
 insertTest3 = do
   let q =
         [sql|
@@ -141,7 +163,7 @@ insertTest3 = do
             |]
   query () q >>= print
 
-createTest1 :: MyApp ()
+createTest1 :: Eff AppEffs ()
 createTest1 = do
   let q =
         [sql|
@@ -149,7 +171,7 @@ createTest1 = do
             |]
   query () q >>= print
 
-createTest2 :: MyApp ()
+createTest2 :: Eff AppEffs ()
 createTest2 = do
   let q =
         [sql|
@@ -157,7 +179,7 @@ createTest2 = do
             |]
   query () q >>= print
 
-createTest3 :: MyApp ()
+createTest3 :: Eff AppEffs ()
 createTest3 = do
   let q =
         [sql|
@@ -165,10 +187,10 @@ createTest3 = do
             |]
   query () q >>= print
 
-deleteTest1 :: MyApp ()
+deleteTest1 :: Eff AppEffs ()
 deleteTest1 = query () [sql| DELETE test :: (); |]
 
-deleteTest2 :: MyApp ()
+deleteTest2 :: Eff AppEffs ()
 deleteTest2 = do
   let rid = RecordID
         (TableName $ fromMaybe (P.error "invalid id") (mkIdentifier "test"))
@@ -176,7 +198,7 @@ deleteTest2 = do
   let q = [sql| (DELETE test where id = %id :: RecordID) :: (); |]
   query (#id .== rid) q
 
-updateTest1 :: MyApp ()
+updateTest1 :: Eff AppEffs ()
 updateTest1 = do
   let rid = RecordID
         (TableName $ fromMaybe (P.error "invalid id") (mkIdentifier "test"))
@@ -185,17 +207,17 @@ updateTest1 = do
   let q = [sql| (UPDATE test SET name = "updated Name" where id = (%id :: RecordID) RETURN NONE) :: (); |]
   query (#id .== rid) q
 
-updateTest2 :: MyApp ()
+updateTest2 :: Eff AppEffs ()
 updateTest2 = do
   let q = [sql| (UPDATE artist:00d3xv269u0x5o37q16u->create->product SET name = "updated Name") :: (); |]
   query () q
 
-selectTest1 :: MyApp ()
+selectTest1 :: Eff AppEffs ()
 selectTest1 = do
   let q = [sql| (SELECT * FROM person WHERE ->knows->person->(knows WHERE influencer = %v1 :: Bool) TIMEOUT 5s) :: Value; |]
   query (#v1 .== True) q >>= print
 
-relateTest1 :: MyApp ()
+relateTest1 :: Eff AppEffs ()
 relateTest1 = do
   let q = [sql|
               (RELATE person:l19zjikkw1p1h9o6ixrg->wrote->article:8nkk6uj4yprt49z7y3zm
@@ -203,7 +225,7 @@ relateTest1 = do
               |]
   query () q >>= print
 
-defineTest1 :: MyApp ()
+defineTest1 :: Eff AppEffs ()
 defineTest1 = do
   let q =
         [sql|
@@ -255,7 +277,7 @@ defineTest1 = do
             |]
   query (#p .== "my val") q >>= print
 
-inputTest :: MyApp ()
+inputTest :: Eff AppEffs ()
 inputTest = do
   let q =
         [sql|
@@ -265,7 +287,7 @@ inputTest = do
             |]
   query (#fn .== "Lasonya") q >>= print
 
-returnTest :: MyApp ()
+returnTest :: Eff AppEffs ()
 returnTest = do
   let q =
         [sql| let $r = select id :: Text, ->create->product AS cat :: (Vector TestRecType)
@@ -275,10 +297,10 @@ returnTest = do
             |]
   query () q >>= print
 
-exceptionTest :: MyApp ()
+exceptionTest :: Eff AppEffs ()
 exceptionTest = query () [sql| throw "my error!"; |]
 
-txTest :: MyApp ()
+txTest :: Eff AppEffs ()
 txTest = do
   let q = [sql|
               begin;

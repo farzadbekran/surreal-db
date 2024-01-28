@@ -42,6 +42,10 @@ dependencies:
 - profunctors
 - vector
 - exceptions
+- effectful
+- effectful-core
+- effectful-th
+- effectful-plugin
 
 ghc-options:
 - -Wall
@@ -53,11 +57,17 @@ ghc-options:
 - -Wmissing-home-modules
 - -Wpartial-fields
 - -Wredundant-constraints
+- -fplugin=Effectful.Plugin
 
 default-extensions:
 - OverloadedLabels
 - OverloadedStrings
 - NoImplicitPrelude
+- FlexibleContexts
+- ScopedTypeVariables
+- TypeApplications
+- TypeFamilies
+- TypeOperators
 
 library:
   source-dirs: src

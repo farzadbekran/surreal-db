@@ -11,9 +11,9 @@ import           Data.Aeson          as J
 
 data Request
   = Request
-      { id     :: Int
-      , method :: Text
-      , params :: [Value]
+      { id     :: !Int
+      , method :: !Text
+      , params :: ![Value]
       }
   deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
 

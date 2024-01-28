@@ -5,7 +5,7 @@
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Database.Surreal.WS.RPCTypes where
+module Database.Surreal.Effect.Handlers.RPCTypes where
 
 import           ClassyPrelude          hiding ( error, id )
 import           Control.Concurrent     ( ThreadId )
@@ -14,16 +14,20 @@ import qualified Network.WebSockets     as WS
 
 data RPCConnectionState
   = RPCConnectionState
-      { conn           :: WS.Connection
-      , nextReqID      :: TVar Int
-      , respMap        :: TVar (Map Int (MVar Response))
-      , liveRespMap    :: TVar (Map Text (LiveResponse -> IO ()))
-      , listenerThread :: ThreadId
+      { conn           :: !WS.Connection
+      , nextReqID      :: !(TVar Int)
+      , respMap        :: !(TVar (Map Int (MVar Response)))
+      , liveRespMap    :: !(TVar (Map Text (LiveResponse -> IO ())))
+      , listenerThread :: !ThreadId
       }
 
-data RPCNetworkException
+data RPCError
   = NotConnected
-  | InvalidResponse Text
-  | RequestTimeout Request
-  | SigninError (Maybe SurrealError)
+  | InvalidResponse !Text
+  | RequestTimeout !Request
+  | SigninError !(Maybe SurrealError)
+  | SurrealErr !SurrealError
+  | DecodeErr !DecodeError
+  | DriverErr !DriverError
+  | IOException !SomeException
   deriving (Exception, Show)
