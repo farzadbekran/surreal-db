@@ -1,11 +1,9 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PolyKinds                  #-}
@@ -15,13 +13,10 @@
 
 module Database.Surreal.Effect.Handlers.RPC where
 
-import           ClassyPrelude                             hiding ( Reader, ask,
+import           ClassyPrelude                             hiding (race, Reader, ask,
                                                              error, id,
                                                              throwTo )
-import           Control.Concurrent                        ( ThreadId, forkIO,
-                                                             myThreadId,
-                                                             threadDelay,
-                                                             throwTo )
+import qualified Control.Concurrent                        as C
 import           Control.Exception                         ( throw )
 import qualified Data.Aeson                                as J ( Value (..),
                                                                   decode,
@@ -44,13 +39,15 @@ import           Database.Surreal.Effect.Handlers.RPCTypes
 import           Database.Surreal.TH
 import           Database.Surreal.Types
 import           Effectful
+import           Effectful.Concurrent
+import           Effectful.Concurrent.Async
 import           Effectful.Dispatch.Dynamic
 import           Effectful.Error.Dynamic
 import           Effectful.Reader.Dynamic
 import           Network.Socket                            ( withSocketsDo )
 import qualified Network.WebSockets                        as WS
 
-type RPCConstraints es = (IOE :> es, Reader RPCConnectionState :> es, Error RPCError :> es)
+type RPCConstraints es = (IOE :> es, Reader RPCConnectionState :> es, Error RPCError :> es, Concurrent :> es)
 
 {- |
 listens to the connection and writes responses to the
@@ -58,13 +55,13 @@ response map.
 -}
 rpcApp
   :: MVar WS.Connection
-  -> MVar ThreadId
+  -> MVar C.ThreadId
   -> TVar (Map Int (MVar Response))
   -> TVar (Map Text (LiveResponse -> IO ()))
   -> WS.ClientApp ()
 rpcApp connMvar threadIDMvar respMap liveRespMap connection = do
   putMVar connMvar connection
-  tid <- myThreadId
+  tid <- C.myThreadId
   putMVar threadIDMvar tid
   forever $ do
     msg <- WS.receiveData connection
@@ -81,24 +78,24 @@ rpcApp connMvar threadIDMvar respMap liveRespMap connection = do
       Just (LiveNotification lr@(LiveResponse { .. })) -> do
         mvarMap <- readTVarIO liveRespMap
         case mvarMap !? id of
-          Just f  -> void $ forkIO $ f lr
+          Just f  -> void $ C.forkIO $ f lr
           Nothing -> putStrLn "rpcApp: Missing live response handler!"
       _otherwise -> pure ()
     case (rsp, liveNotification) of
       (Nothing, Nothing) -> putStrLn $ "rpcApp: Invalid Response: " <> decodeUtf8 (BL.toStrict msg)
       _otherwise -> pure ()
 
-connectRPC :: (IOE :> es, Error RPCError :> es) => ConnectionInfo -> Eff es RPCConnectionState
+connectRPC :: (IOE :> es, Error RPCError :> es, Concurrent :> es) => ConnectionInfo -> Eff es RPCConnectionState
 connectRPC ConnectionInfo { .. } = catchAny
   (do
     connMVar <- newEmptyMVar
     threadIDMVar <- newEmptyMVar
     respTVar <- newTVarIO M.empty
     liveRespTVar <- newTVarIO M.empty
-    parentThreadID <- liftIO myThreadId
-    _ <- liftIO $ forkIO
+    parentThreadID <- myThreadId
+    _ <- forkIO
       $ catchAny
-      (withSocketsDo $ WS.runClient url port "/rpc" (rpcApp connMVar threadIDMVar respTVar liveRespTVar))
+      (liftIO $ withSocketsDo $ WS.runClient url port "/rpc" (rpcApp connMVar threadIDMVar respTVar liveRespTVar))
       (throwTo parentThreadID)
     conn <- readMVar connMVar
     tid <- readMVar threadIDMVar
@@ -136,7 +133,7 @@ sendRPC method params = do
   -- recover after 10 seconds of delay
   res <- race
     (do
-      liftIO $ threadDelay $ 10 * 1000000
+      threadDelay $ 10 * 1000000
       return $ RequestTimeout req)
     (readMVar mvar)
   atomically $ modifyTVar' respMap (M.delete nextID)
@@ -367,7 +364,7 @@ deleteRPC target = do
     Left e   -> throwError $ SurrealErr e
 
 runSurrealRPC :: (IOE :> es, Error RPCError :> es) => RPCConnectionState -> Eff (Surreal : es) a -> Eff es a
-runSurrealRPC conn = reinterpret (runReader conn) $ \_ -> \case
+runSurrealRPC conn = reinterpret (runConcurrent . runReader conn) $ \_ -> \case
   GetNextRequestID -> getNextRequestIDRPC
   Send_ s vals -> sendRPC s vals
   Query i q -> queryRPC i q

@@ -4,10 +4,12 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedLabels           #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE QuasiQuotes                #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -23,6 +25,7 @@ import           Data.Row
 import           Data.Row.Aeson             ()
 import           Database.Surreal.Core
 import           Effectful
+import           Effectful.Concurrent
 import           Effectful.Dispatch.Dynamic
 import           Effectful.Error.Dynamic
 import           Effectful.TH
@@ -46,7 +49,7 @@ type AppEffs = [MyAppEffect, Surreal, Error RPCError, IOE]
 
 runApp :: Eff AppEffs a -> IO a
 runApp m = do
-  eConn <- runEff $ runError $ connectRPC defaultConnectionInfo
+  eConn <- runEff $ runConcurrent $ runError $ connectRPC defaultConnectionInfo
   case eConn of
     Right cs -> do
       eR <- runEff $ runError $ runSurrealRPC cs $ runMyAppEffectIO m
@@ -110,14 +113,14 @@ testLiveQuery = do
               live select * from artist;
               |]
   uuid <- query () q
-  listenMvar <- newEmptyMVar
-  let handler = putMVar listenMvar
+  listenMvar <- P.newEmptyMVar
+  let handler = P.putMVar listenMvar
   print uuid
   registerLiveListener uuid handler
   --unregisterLiveListener uuid
   --_ <- tryAny $ unregisterLiveListener "invalid uuid" -- this causes an error on db side
   _ <- forever $ do
-    r <- takeMVar listenMvar
+    r <- P.takeMVar listenMvar
     putStrLn $ "received live notification: " <> tshow r
   return ()
 
