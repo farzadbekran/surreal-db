@@ -3,7 +3,6 @@
 {-# LANGUAGE TypeFamilies #-}
 
 {-# OPTIONS_GHC -Wno-deriving-defaults #-}
-{-# LANGUAGE LambdaCase #-}
 
 module Database.Surreal.Parser where
 
@@ -47,14 +46,6 @@ maybeBetweenParens p = p <|> betweenParens p
 
 identifier :: Parser Identifier
 identifier = lexeme $ do
-  s <- pack <$> takeWhile1P Nothing isValidIdentifierChar
-  case mkIdentifier s of
-    Just i -> return i
-    _      -> fail $ "invalid identifier: " <> unpack s
-
--- | same as identifier without a lexeme
-identifier_ :: Parser Identifier
-identifier_ = do
   s <- pack <$> takeWhile1P Nothing isValidIdentifierChar
   case mkIdentifier s of
     Just i -> return i
@@ -366,8 +357,8 @@ fieldTerm = lexeme $ choice $ map try
   ]
 
 fnName :: Parser FNName
-fnName = label "FNName" $ do
-  parts <- sepBy identifier_ (symbol "::")
+fnName = label "FNName" $ lexeme $ do
+  parts <- sepBy identifier (symbol "::")
   if null parts
     then fail "Invalid function name."
     else
@@ -675,9 +666,6 @@ targetEdge = label "targetEdge" $ lexeme $ do
 target :: Parser Target
 target = label "target" $ lexeme $ choice $ map try
   [ targetEdge
-  , appE >>= (\case
-                 (AppE n ps) -> return $ TargetFn n ps
-                 _otherwise -> fail "expected function application!")
   , TargetRecID <$> recordID
   , TargetTable <$> tableName
   , TargetParam <$> param

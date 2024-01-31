@@ -711,7 +711,6 @@ data Target
   | TargetRecID RecordID
   | TargetEdge RecordID [Edge]
   | TargetParam Param
-  | TargetFn FNName [Exp]
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Target where
@@ -719,7 +718,6 @@ instance ToQL Target where
   toQL (TargetRecID rid) = toQL rid
   toQL (TargetEdge rid es) =
     foldl1 (<>) $ toQL rid : map toQL es
-  toQL (TargetFn fn ps) = prepText $ [toQL fn <> "("] <> intersperse ", " (map toQL ps) <> [")"]
   toQL (TargetParam p)  = toQL p
 
 instance HasInput Target where
@@ -727,7 +725,6 @@ instance HasInput Target where
     TargetTable _ -> []
     TargetRecID rid -> getInputs rid
     TargetEdge rid es -> getInputs rid <> concatMap getInputs es
-    TargetFn _ ps -> concatMap getInputs ps
     TargetParam p -> getInputs p
 
 data CreateVal
