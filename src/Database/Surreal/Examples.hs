@@ -58,6 +58,7 @@ runApp m = do
         Left a  -> handleErr a
     Left a -> handleErr a
   where
+    handleErr :: (CallStack, RPCError) -> IO a
     handleErr (callStack, e) = do
       print e
       putStrLn $ pack $ prettyCallStack callStack

@@ -10,6 +10,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE IncoherentInstances        #-}
 
 module Database.Surreal.Effect.Handlers.RPC where
 
@@ -17,7 +18,7 @@ import           ClassyPrelude                             hiding (race, Reader,
                                                              error, id,
                                                              throwTo )
 import qualified Control.Concurrent                        as C
-import           Control.Exception                         ( throw )
+--import           Control.Exception                         ( throw )
 import qualified Data.Aeson                                as J ( Value (..),
                                                                   decode,
                                                                   encode,
@@ -101,17 +102,19 @@ connectRPC ConnectionInfo { .. } = catchAny
     tid <- readMVar threadIDMVar
     reqIDTvar <- newTVarIO 0
     let connectionState = RPCConnectionState conn reqIDTvar respTVar liveRespTVar tid
-    signinRes <- runError $ runSurrealRPC connectionState $ send_ "signin"
+    _ <- runReader connectionState $ sendRPC "signin"
                  [J.object [ "user" J..= user
                            , "pass" J..= pass
                            , "ns" J..= ns
                            , "db" J..= db]]
-    case signinRes of
-      Right Response { error } ->
-        if isNothing error
-          then return connectionState
-          else throw $ SigninError error
-      Left (_cs, e) -> throwError e)
+    return connectionState
+    --case signinRes of
+    --  Right Response { error } ->
+    --    if isNothing error
+    --      then return connectionState
+    --      else throw $ SigninError error
+    --  Left (_cs, e) -> throwError e
+    )
   (throwError . IOException)
 
 getNextRequestIDRPC :: RPCConstraints es => Eff es Int

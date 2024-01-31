@@ -50,7 +50,7 @@ library
       TypeApplications
       TypeFamilies
       TypeOperators
-  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fplugin=Effectful.Plugin
+  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       Decimal
     , aeson
@@ -60,7 +60,6 @@ library
     , containers
     , effectful
     , effectful-core
-    , effectful-plugin
     , effectful-th
     , exceptions
     , first-class-families
@@ -96,7 +95,7 @@ test-suite surreal-db-test
       TypeApplications
       TypeFamilies
       TypeOperators
-  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fplugin=Effectful.Plugin -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       Decimal
     , aeson
@@ -106,7 +105,6 @@ test-suite surreal-db-test
     , containers
     , effectful
     , effectful-core
-    , effectful-plugin
     , effectful-th
     , exceptions
     , first-class-families
