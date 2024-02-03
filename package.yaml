@@ -45,7 +45,7 @@ dependencies:
 - effectful
 - effectful-core
 - effectful-th
-#- effectful-plugin
+- effectful-plugin
 
 ghc-options:
 - -Wall
@@ -57,7 +57,7 @@ ghc-options:
 - -Wmissing-home-modules
 - -Wpartial-fields
 - -Wredundant-constraints
-#- -fplugin=Effectful.Plugin
+- -fplugin=Effectful.Plugin
 
 default-extensions:
 - OverloadedLabels

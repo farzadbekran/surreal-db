@@ -52,6 +52,14 @@ identifier = lexeme $ do
     Just i -> return i
     _      -> fail $ "invalid identifier: " <> unpack s
 
+-- | same as identifier without a lexeme
+identifier_ :: Parser Identifier
+identifier_ = do
+  s <- pack <$> takeWhile1P Nothing isValidIdentifierChar
+  case mkIdentifier s of
+    Just i -> return i
+    _      -> fail $ "invalid identifier: " <> unpack s
+
 -- | Type Parsers
 
 typeVar :: Parser Text
@@ -358,8 +366,8 @@ fieldTerm = lexeme $ choice $ map try
   ]
 
 fnName :: Parser FNName
-fnName = label "FNName" $ lexeme $ do
-  parts <- sepBy identifier (symbol "::")
+fnName = label "FNName" $ do
+  parts <- sepBy identifier_ (symbol "::")
   if null parts
     then fail "Invalid function name."
     else
