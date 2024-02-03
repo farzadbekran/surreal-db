@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeFamilies #-}
 
 {-# OPTIONS_GHC -Wno-deriving-defaults #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Database.Surreal.Parser where
 
@@ -666,6 +667,9 @@ targetEdge = label "targetEdge" $ lexeme $ do
 target :: Parser Target
 target = label "target" $ lexeme $ choice $ map try
   [ targetEdge
+  , appE >>= (\case
+                 (AppE n ps) -> return $ TargetFn n ps
+                 _otherwise -> fail "expected function application!")
   , TargetRecID <$> recordID
   , TargetTable <$> tableName
   , TargetParam <$> param
