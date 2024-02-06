@@ -11,7 +11,7 @@ import           ClassyPrelude                  hiding ( bool, exp, group,
                                                   try )
 import qualified Control.Monad.Combinators.Expr as E
 import           Control.Monad.Fail             ( MonadFail (..) )
-import           Data.Char                      ( isAlpha, isLower, isAlphaNum )
+import           Data.Char                      ( isAlphaNum )
 import           Data.Foldable                  ( foldl )
 import           Data.Time.ISO8601              ( parseISO8601 )
 import           Data.Void
@@ -53,25 +53,16 @@ identifier = lexeme $ do
 
 -- | Type Parsers
 
-typeVar :: Parser Text
-typeVar = lexeme $ do
-  c <- takeWhile1P Nothing isAlpha
-  case c of
-    [c'] -> if isLower c'
-      then return $ pack c
-      else fail "Invalid type varible!"
-    _otherwise -> fail "Invalid type varible!"
-
 nestedType :: Parser TypeDef
 nestedType = lexeme $ do
-  prefix <- lexeme $ takeWhile1P Nothing isAlphaNum
+  prefix <- lexeme $ takeWhile1P Nothing (\c -> isAlphaNum c || c == '.')
   postfix <- many parseType
   return $ T prefix postfix
 
 simpleType :: Parser TypeDef
 simpleType = lexeme $ choice
   [ do
-      t <- lexeme $ takeWhile1P Nothing isAlphaNum
+      t <- lexeme $ takeWhile1P Nothing (\c -> isAlphaNum c || c == '.')
       return $ T t []
   , do
       _ <- symbol "()"
@@ -87,7 +78,7 @@ noneL :: Parser Literal
 noneL = label "NONE" $ lexeme $ caseInsensitiveSymbol "NONE" $> NoneL
 
 nullL :: Parser Literal
-nullL = label "NULL" $ lexeme $ caseInsensitiveSymbol "NULL" $> NoneL
+nullL = label "NULL" $ lexeme $ caseInsensitiveSymbol "NULL" $> NullL
 
 boolL :: Parser Literal
 boolL = label "Bool" $ lexeme $
