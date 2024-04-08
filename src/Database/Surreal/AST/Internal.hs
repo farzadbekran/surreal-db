@@ -1,11 +1,11 @@
-{-# LANGUAGE DeriveGeneric   #-}
-{-# LANGUAGE LambdaCase      #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE RecordWildCards            #-}
 
 {-# OPTIONS_GHC -Wno-deriving-defaults #-}
-{-# LANGUAGE NamedFieldPuns  #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE PatternSynonyms #-}
 
 module Database.Surreal.AST.Internal where
 
@@ -49,6 +49,7 @@ newtype Identifier
 
 pattern ID :: Text -> Identifier
 pattern ID t <- Ident t
+{-# COMPLETE ID #-}
 
 instance ToQL Identifier where
   toQL (Ident t) = t
@@ -119,43 +120,56 @@ instance ToQL Operator where
     INTERSECTS -> "INTERSECTS"
     (:@@) -> "@@"
 
-newtype Namespace = Namespace Identifier
+newtype Namespace
+  = Namespace Identifier
   deriving (Eq, Generic, Read, Show, ToQL)
 
-newtype Database = Database Identifier
+newtype Database
+  = Database Identifier
   deriving (Eq, Generic, Read, Show, ToQL)
 
-newtype TableName = TableName Identifier
+newtype TableName
+  = TableName Identifier
   deriving (Eq, Generic, Read, Show, ToQL)
 
-newtype UserName = UserName Identifier
+newtype UserName
+  = UserName Identifier
   deriving (Eq, Generic, Read, Show, ToQL)
 
-newtype ScopeName = ScopeName Identifier
+newtype ScopeName
+  = ScopeName Identifier
   deriving (Eq, Generic, Read, Show, ToQL)
 
-newtype TokenName = TokenName Identifier
+newtype TokenName
+  = TokenName Identifier
   deriving (Eq, Generic, Read, Show, ToQL)
 
-newtype EventName = EventName Identifier
+newtype EventName
+  = EventName Identifier
   deriving (Eq, Generic, Read, Show, ToQL)
 
-newtype FieldName = FieldName Identifier
+newtype FieldName
+  = FieldName Identifier
   deriving (Eq, Generic, Read, Show, ToQL)
 
-newtype ParamName = ParamName Identifier
+newtype ParamName
+  = ParamName Identifier
   deriving (Eq, Generic, Read, Show, ToQL)
 
-newtype AnalyzerName = AnalyzerName Identifier
+newtype AnalyzerName
+  = AnalyzerName Identifier
   deriving (Eq, Generic, Read, Show, ToQL)
 
-newtype LanguageName = LanguageName Identifier
+newtype LanguageName
+  = LanguageName Identifier
   deriving (Eq, Generic, Read, Show, ToQL)
 
-newtype IndexName = IndexName Identifier
+newtype IndexName
+  = IndexName Identifier
   deriving (Eq, Generic, Read, Show, ToQL)
 
-newtype LoginName = LoginName Identifier
+newtype LoginName
+  = LoginName Identifier
   deriving (Eq, Generic, Read, Show, ToQL)
 
 type TokenValue = Text
@@ -1093,15 +1107,7 @@ data Flexible = Flexible
 data Optional = Optional
   deriving (Eq, Generic, Read, Show)
 
-data GeometryType
-  = Feature
-  | Point
-  | Line
-  | Polygon
-  | Multipoint
-  | Multiline
-  | Multipolygon
-  | Collection
+data GeometryType = Feature | Point | Line | Polygon | Multipoint | Multiline | Multipolygon | Collection
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL GeometryType where
