@@ -261,6 +261,7 @@ defineTest1 = do
                 throw "invalid profile id!";
               }};
             DEFINE FIELD my_field ON TABLE test;
+            DEFINE FIELD my_field ON TABLE test VALUE time::now() READONLY;
             DEFINE FIELD my_field ON TABLE test FLEXIBLE TYPE option<string>;
             DEFINE FIELD my_field ON TABLE test FLEXIBLE TYPE option<string>
               VALUE 1

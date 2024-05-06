@@ -1182,9 +1182,10 @@ defField = label "defField" $ lexeme $ do
   ft <- optional fieldType
   defaultE <- optional $ caseInsensitiveSymbol "DEFAULT" >> exp
   valE <- optional $ caseInsensitiveSymbol "VALUE" >> exp
+  readOnly <- optional $ caseInsensitiveSymbol "READONLY" $> READONLY
   assertE <- optional $ caseInsensitiveSymbol "ASSERT" >> exp
   tp <- optional tablePermissions
-  return $ DefField f tn ft defaultE valE assertE tp
+  return $ DefField f tn ft defaultE valE readOnly assertE tp
 
 tokenizer :: Parser Tokenizer
 tokenizer = label "tokenizer" $ lexeme $ choice

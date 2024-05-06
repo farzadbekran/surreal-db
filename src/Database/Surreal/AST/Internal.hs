@@ -1233,6 +1233,12 @@ instance ToQL SearchAnalyzer where
       , toQL mHighlights
       ]
 
+data READONLY = READONLY
+  deriving (Eq, Generic, Read, Show)
+
+instance ToQL READONLY where
+  toQL _ = "READONLY"
+
 data Define
   = DefNamespace Namespace
   | DefDatabase Database
@@ -1241,7 +1247,7 @@ data Define
   | DefScope ScopeName (Maybe Duration) (Maybe SignUpExp) (Maybe SignInExp)
   | DefTable TableName (Maybe DROP) (Maybe SchemaType) (Maybe AsTableViewExp) (Maybe Duration) (Maybe TablePermissions)
   | DefEvent EventName TableName (Maybe WhenExp) ThenExp
-  | DefField Field TableName (Maybe FieldType) (Maybe DefaultExp) (Maybe ValueExp) (Maybe AssertExp) (Maybe TablePermissions)
+  | DefField Field TableName (Maybe FieldType) (Maybe DefaultExp) (Maybe ValueExp) (Maybe READONLY) (Maybe AssertExp) (Maybe TablePermissions)
   | DefAnalyzer AnalyzerName (Maybe [Tokenizer]) (Maybe [Filter])
   | DefIndex IndexName TableName [Field] (Maybe (Either UNIQUE SearchAnalyzer))
   deriving (Eq, Generic, Read, Show)
@@ -1308,7 +1314,7 @@ instance ToQL Define where
          , "THEN"
          , toQL thenE
          ]
-    DefField f tn mFieldType mDefExp mValExp mAssertExp mPermissions
+    DefField f tn mFieldType mDefExp mValExp mReadOnly mAssertExp mPermissions
       -> prepText
          [ "DEFINE FIELD"
          , toQL f
@@ -1320,6 +1326,9 @@ instance ToQL Define where
              Nothing -> ""
          , case mValExp of
              Just e  -> "VALUE " <> toQL e
+             Nothing -> ""
+         , case mReadOnly of
+             Just _  -> "READONLY"
              Nothing -> ""
          , case mAssertExp of
              Just e  -> "ASSERT " <> toQL e
