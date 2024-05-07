@@ -8,11 +8,13 @@
 
 module Database.Surreal.Class.ToParam where
 
-import           ClassyPrelude      hiding ( isNothing )
+import           ClassyPrelude              hiding ( Builder, isNothing )
 
-import           Data.Aeson         ( encode )
+import           Data.Aeson                 ( encode )
 import           Data.Aeson.Types
-import           Data.Row.Records   hiding ( map )
+import           Data.Row.Records           hiding ( map )
+import           Data.Text.Lazy.Builder     ( Builder, fromText, toLazyText )
+import           Data.Text.Lazy.Builder.Int ( decimal )
 import           Data.Type.Equality
 import           GHC.Generics
 
@@ -51,7 +53,10 @@ instance (Selector s, GToParam a) => GToParam (M1 S s a) where
   gtoParam m@(M1 x) = "\"" <> pack (selName m) <> "\": " <> gtoParam x
 
 instance (GToParam a, GToParam b) => GToParam (a :*: b) where
-  gtoParam (a :*: b) = gtoParam a <> ", " <> gtoParam b
+  gtoParam (a :*: b) = toStrict . toLazyText $ mconcat [gtoParamBuilder a, ", ", gtoParamBuilder b]
+
+gtoParamBuilder :: GToParam a => a p -> Builder
+gtoParamBuilder = fromText . gtoParam
 
 instance (GToParam a, GToParam b) => GToParam (a :+: b) where
   gtoParam (L1 x) = gtoParam x
@@ -92,6 +97,8 @@ instance {-# OVERLAPPING #-} (ToParam a, Functor t, MonoFoldable (t Text), Eleme
 --       , tt2  :: ![Test]
 --       }
 --   deriving (Generic, ToParam)
+
+-- -- toParam $ Test4 Nothing 123 Test3 [Test1, Test2]
 
 -- tmp :: Rec ("name" .== Maybe Text .+ "age" .== Int)
 -- tmp = #name .== Nothing .+ #age .== 123
