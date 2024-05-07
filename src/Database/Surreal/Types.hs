@@ -6,22 +6,14 @@
 
 module Database.Surreal.Types where
 
-import           ClassyPrelude       hiding ( error, id )
-import           Data.Aeson          as J
-
-data Request
-  = Request
-      { id     :: !Int
-      , method :: !Text
-      , params :: ![Value]
-      }
-  deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
+import           ClassyPrelude hiding ( error, id )
+import           Data.Aeson    as J
 
 data Response
   = Response
-      { id     :: Int
-      , result :: Maybe Value
-      , error  :: Maybe SurrealError
+      { id     :: !Int
+      , result :: !(Maybe Value)
+      , error  :: !(Maybe SurrealError)
       }
   deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
 
@@ -30,9 +22,9 @@ data LiveAction = CREATE | UPDATE | DELETE
 
 data LiveResponse
   = LiveResponse
-      { id     :: Text
-      , result :: Value
-      , action :: LiveAction
+      { id     :: !Text
+      , result :: !Value
+      , action :: !LiveAction
       }
   deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
 
@@ -42,19 +34,19 @@ newtype LiveNotification
 
 data SurrealError
   = SurrealError
-      { code    :: Int
-      , message :: Text
+      { code    :: !Int
+      , message :: !Text
       }
   deriving (Eq, Exception, FromJSON, Generic, Read, Show, ToJSON)
 
 data ConnectionInfo
   = ConnectionInfo
-      { url  :: String
-      , port :: Int
-      , user :: Text
-      , pass :: Text
-      , ns   :: Text
-      , db   :: Text
+      { url  :: !String
+      , port :: !Int
+      , user :: !Text
+      , pass :: !Text
+      , ns   :: !Text
+      , db   :: !Text
       }
   deriving (Eq, Read, Show)
 

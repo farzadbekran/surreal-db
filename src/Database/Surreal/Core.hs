@@ -8,6 +8,7 @@ module Database.Surreal.Core
     ( module Data.Row.Aeson
     , module Database.Surreal.AST
     , module Database.Surreal.ASTJSON
+    , module Database.Surreal.Class.ToParam
     , module Database.Surreal.Effect
     , module Database.Surreal.Effect.Handlers.RPC
     , module Database.Surreal.Effect.Handlers.RPCTypes
@@ -18,6 +19,7 @@ module Database.Surreal.Core
 import           Data.Row.Aeson                            ()
 import           Database.Surreal.AST
 import           Database.Surreal.ASTJSON                  ()
+import           Database.Surreal.Class.ToParam
 import           Database.Surreal.Effect
 import           Database.Surreal.Effect.Handlers.RPC
 import           Database.Surreal.Effect.Handlers.RPCTypes

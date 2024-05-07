@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE InstanceSigs          #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
@@ -19,29 +20,30 @@ module Database.Surreal.TH
     , sql
     ) where
 
-import           ClassyPrelude                as P hiding ( exp, lift )
+import           ClassyPrelude                  as P hiding ( exp, lift )
 import           Control.Monad.Fail
-import           Data.Aeson                   as Aeson
+import           Data.Aeson                     as Aeson
 import           Data.Profunctor
 import           Data.Row.Records
-import           Database.Surreal.AST         ( HasInput (getInputs) )
-import qualified Database.Surreal.AST         as AST
+import           Database.Surreal.AST           ( HasInput (getInputs) )
+import qualified Database.Surreal.AST           as AST
+import           Database.Surreal.Class.ToParam
 import           Database.Surreal.Parser
 import           Database.Surreal.TypeHandler
 import           Database.Surreal.Types
 import           Language.Haskell.TH
 import           Language.Haskell.TH.Quote
 import           Language.Haskell.TH.Syntax
-import           Text.Megaparsec              hiding ( Label )
+import           Text.Megaparsec                hiding ( Label )
 
 -- | The type used by TH to parse SurrealQL
 data Query input output
-  = Query Text (input -> Value) (Value -> output)
+  = Query !Text !(input -> Text) !(Value -> output)
 
 getSQL :: Query input output -> Text
 getSQL (Query t _ _) = t
 
-getEncoder :: Query input output -> (input -> Value)
+getEncoder :: Query input output -> (input -> Text)
 getEncoder (Query _ encoder _) = encoder
 
 getDecoder :: Query input output -> (Value -> output)
@@ -108,5 +110,5 @@ parseSQL s = do
     Left e    -> fail $ errorBundlePretty e
   where
     getInputEncoder :: [AST.Param] -> Q Exp
-    getInputEncoder [] = [| (\_ -> object [] ) |]
-    getInputEncoder inputs = [| toJSON :: Rec $(mkRecTypeFromInputs inputs) -> Value |]
+    getInputEncoder [] = [| (const "{}" ) |]
+    getInputEncoder inputs = [| toParam :: Rec $(mkRecTypeFromInputs inputs) -> Text |]

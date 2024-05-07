@@ -24,7 +24,7 @@ data RPCConnectionState
 data RPCError
   = NotConnected
   | InvalidResponse !Text
-  | RequestTimeout !Request
+  | RequestTimeout !Text
   | SigninError !(Maybe SurrealError)
   | SurrealErr !SurrealError
   | DecodeErr !DecodeError

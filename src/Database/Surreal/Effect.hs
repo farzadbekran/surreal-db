@@ -7,12 +7,14 @@
 
 module Database.Surreal.Effect where
 
-import           ClassyPrelude           hiding ( delete )
+import           ClassyPrelude                  hiding ( delete )
 
-import           Data.Aeson              as J
-import           Database.Surreal.AST    ( Database, Identifier, Namespace,
-                                           RecordID, ScopeName, TableName,
-                                           TokenValue, UserName )
+import           Data.Aeson                     as J
+import           Database.Surreal.AST           ( Database, Identifier,
+                                                  Namespace, RecordID,
+                                                  ScopeName, TableName,
+                                                  TokenValue, UserName )
+import           Database.Surreal.Class.ToParam
 import           Database.Surreal.TH
 import           Database.Surreal.Types
 import           Effectful
@@ -23,15 +25,15 @@ type LiveQueryUUID = Text
 type SQL = Text
 
 data OPTarget
-  = Table TableName
-  | Record RecordID
+  = Table !TableName
+  | Record !RecordID
   deriving (Eq, Generic, Show)
 
 data Surreal :: Effect where
   -- | Used internally to generate incrementing ids for requests
   GetNextRequestID :: Surreal m Int
   -- | Low level function used to send queries
-  Send_ :: SQL -> [Value] -> Surreal m Response
+  Send_ :: SQL -> [Text] -> Surreal m Response
   -- | High level function to run a query against database.
   --The `Query` is produced by `sql` TemplateHaskell quasi quoter
   --which makes the query type-safe using type annotations
@@ -70,16 +72,16 @@ data Surreal :: Effect where
   --using a record id
   Select :: OPTarget -> Surreal m (Maybe Value)
   -- | This method creates a record either with a random or specified ID
-  Create :: OPTarget -> Maybe Value -> Surreal m Value
+  Create :: ToParam a => OPTarget -> Maybe a -> Surreal m Value
   -- | Insert one or multiple records in a table
-  Insert :: TableName -> [Value] -> Surreal m [Value]
+  Insert :: ToParam a => TableName -> [a] -> Surreal m [Value]
   -- | Update a specified record or table with the given value,
   --if no value is given, simply trigger an update event on the target
-  Update :: OPTarget -> Maybe Value -> Surreal m Value
+  Update :: ToParam a => OPTarget -> Maybe a -> Surreal m Value
   -- | This method merges specified data into either all records in a table or a single record
-  Merge :: OPTarget -> Maybe Value -> Surreal m Value
+  Merge :: ToParam a => OPTarget -> Maybe a -> Surreal m Value
   -- | Patch a record or table with the given JSON Patches
-  Patch :: OPTarget -> [Value] -> Surreal m Value
+  Patch :: ToParam a => OPTarget -> [a] -> Surreal m Value
   -- | Delete a record or whole contents of a table
   Delete :: OPTarget -> Surreal m Value
 

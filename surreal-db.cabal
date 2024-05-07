@@ -28,6 +28,7 @@ library
       Database.Surreal.AST
       Database.Surreal.AST.Internal
       Database.Surreal.ASTJSON
+      Database.Surreal.Class.ToParam
       Database.Surreal.Core
       Database.Surreal.Effect
       Database.Surreal.Effect.Handlers.RPC

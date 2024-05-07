@@ -1,21 +1,21 @@
-{-# LANGUAGE AllowAmbiguousTypes        #-}
-{-# LANGUAGE ConstraintKinds            #-}
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE PolyKinds                  #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE IncoherentInstances        #-}
+{-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE ConstraintKinds      #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE IncoherentInstances  #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE PolyKinds            #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Database.Surreal.Effect.Handlers.RPC where
 
-import           ClassyPrelude                             hiding (race, Reader, ask,
-                                                             error, id,
+import           ClassyPrelude                             hiding ( Reader, ask,
+                                                             error, id, race,
                                                              throwTo )
 import qualified Control.Concurrent                        as C
 --import           Control.Exception                         ( throw )
@@ -25,7 +25,7 @@ import qualified Data.Aeson                                as J ( Value (..),
                                                                   object, (.=) )
 import qualified Data.Aeson.KeyMap                         as AKM
 import qualified Data.ByteString.Lazy                      as BL
-import           Data.Map.Strict                           as M
+import           Data.Map.Strict                           as M hiding ( map )
 import qualified Data.Vector                               as V
 import           Database.Surreal.AST                      ( Database,
                                                              Identifier,
@@ -35,6 +35,7 @@ import           Database.Surreal.AST                      ( Database,
                                                              ToQL (..),
                                                              TokenValue,
                                                              UserName )
+import           Database.Surreal.Class.ToParam
 import           Database.Surreal.Effect
 import           Database.Surreal.Effect.Handlers.RPCTypes
 import           Database.Surreal.TH
@@ -103,10 +104,11 @@ connectRPC ConnectionInfo { .. } = catchAny
     reqIDTvar <- newTVarIO 0
     let connectionState = RPCConnectionState conn reqIDTvar respTVar liveRespTVar tid
     _ <- runReader connectionState $ sendRPC "signin"
-                 [J.object [ "user" J..= user
-                           , "pass" J..= pass
-                           , "ns" J..= ns
-                           , "db" J..= db]]
+                 [toStrict $ decodeUtf8 $ J.encode
+                   $ J.object [ "user" J..= user
+                              , "pass" J..= pass
+                              , "ns" J..= ns
+                              , "db" J..= db]]
     return connectionState
     --case signinRes of
     --  Right Response { error } ->
@@ -125,14 +127,24 @@ getNextRequestIDRPC = do
     writeTVar nextReqID $ nextID + 1
     return nextID
 
-sendRPC :: RPCConstraints es => Text -> [J.Value] -> Eff es Response
+mkRPCRequest :: Int -> Text -> [Text] -> Text
+mkRPCRequest reqID method params =
+  "{"
+  <> "id:" <> tshow reqID <> ","
+  <> "method: \"" <> method <> "\","
+  <> "params:[" <> intercalate "," params <> "]}"
+
+quote :: Text -> Text
+quote t = "\"" <> t <> "\""
+
+sendRPC :: RPCConstraints es => Text -> [Text] -> Eff es Response
 sendRPC method params = do
   RPCConnectionState { .. } <- ask
   nextID <- getNextRequestIDRPC
   mvar <- newEmptyMVar
   atomically $ modifyTVar' respMap (M.insert nextID mvar)
-  let req = Request nextID method params
-  liftIO $ WS.sendTextData conn $ J.encode req
+  let req = mkRPCRequest nextID method params
+  liftIO $ WS.sendTextData conn req
   -- recover after 10 seconds of delay
   res <- race
     (do
@@ -147,7 +159,7 @@ sendRPC method params = do
 queryRPC :: RPCConstraints es => input -> Query input (Either DecodeError output) -> Eff es output
 queryRPC input q = do
   let encodedInput = getEncoder q input
-  Response { result = result, error = err } <- sendRPC "query" [J.String (getSQL q), encodedInput]
+  Response { result = result, error = err } <- sendRPC "query" [getSQL q, encodedInput]
   case err of
     Just e  -> throwError $ SurrealErr e
     Nothing -> case result of
@@ -186,7 +198,7 @@ registerLiveListenerRPC uuid handler = do
 
 unregisterLiveListenerRPC :: RPCConstraints es => Text -> Eff es ()
 unregisterLiveListenerRPC uuid = do
-  Response { error = err } <- sendRPC "query" [J.String $ "KILL \"" <> uuid <> "\";"]
+  Response { error = err } <- sendRPC "query" [quote $ "KILL \"" <> uuid <> "\";"]
   forM_ err (throwError . SurrealErr)
   RPCConnectionState { .. } <- ask
   atomically $ modifyTVar' liveRespMap (M.delete uuid)
@@ -200,7 +212,7 @@ getResponseValue Response { result = result, error = err } =
 
 useRPC :: RPCConstraints es => Namespace -> Database -> Eff es ()
 useRPC ns db = do
-  r <- getResponseValue <$> sendRPC "use" [J.String $ toQL ns, J.String $ toQL db]
+  r <- getResponseValue <$> sendRPC "use" [quote $ toQL ns, quote $ toQL db]
   case r of
     Right _ -> return ()
     Left e  -> throwError $ SurrealErr e
@@ -219,7 +231,7 @@ signupRPC ns db scope (J.Object km) = do
                        . AKM.insert "DB" (J.String $ toQL db)
                        . AKM.insert "SC" (J.String $ toQL scope) )
           km
-  r <- getResponseValue <$> sendRPC "signup" [p]
+  r <- getResponseValue <$> sendRPC "signup" [toStrict $ decodeUtf8 $ J.encode p]
   case r of
     Right r' -> return r'
     Left e   -> throwError $ SurrealErr e
@@ -235,7 +247,7 @@ signinRPC un pass ns db scope (J.Object km) = do
                        . AKM.insert "DB" (J.String $ toQL db)
                        . AKM.insert "SC" (J.String $ toQL scope) )
           km
-  r <- getResponseValue <$> sendRPC "signin" [p]
+  r <- getResponseValue <$> sendRPC "signin" [toStrict $ decodeUtf8 $ J.encode p]
   case r of
     Right (Just (J.String r')) -> return r'
     Left e   -> throwError $ SurrealErr e
@@ -246,7 +258,7 @@ signinRPC _ _ _ _ _ v = throwError $ DriverErr
 
 authenticateRPC :: RPCConstraints es => TokenValue -> Eff es ()
 authenticateRPC token = do
-  r <- getResponseValue <$> sendRPC "authenticate" [J.String token]
+  r <- getResponseValue <$> sendRPC "authenticate" [quote token]
   case r of
     Right _ -> return ()
     Left e  -> throwError $ SurrealErr e
@@ -260,21 +272,21 @@ invalidateRPC = do
 
 letRPC :: RPCConstraints es => Identifier -> J.Value -> Eff es ()
 letRPC i v = do
-  r <- getResponseValue <$> sendRPC "let" [J.String $ toQL i, v]
+  r <- getResponseValue <$> sendRPC "let" [quote $ toQL i, toStrict $ decodeUtf8 $ J.encode v]
   case r of
     Right _ -> return ()
     Left e  -> throwError $ SurrealErr e
 
 unsetRPC :: RPCConstraints es => Identifier -> Eff es ()
 unsetRPC i = do
-  r <- getResponseValue <$> sendRPC "unset" [J.String $ toQL i]
+  r <- getResponseValue <$> sendRPC "unset" [quote $ toQL i]
   case r of
     Right _ -> return ()
     Left e  -> throwError $ SurrealErr e
 
 liveRPC :: RPCConstraints es => TableName -> Eff es LiveQueryUUID
 liveRPC tn = do
-  r <- getResponseValue <$> sendRPC "live" [J.String $ toQL tn]
+  r <- getResponseValue <$> sendRPC "live" [quote $ toQL tn]
   case r of
     Right (Just (J.String r')) -> return r'
     Left e   -> throwError $ SurrealErr e
@@ -282,7 +294,7 @@ liveRPC tn = do
 
 killRPC :: RPCConstraints es => LiveQueryUUID -> Eff es ()
 killRPC i = do
-  r <- getResponseValue <$> sendRPC "kill" [J.String $ toQL i]
+  r <- getResponseValue <$> sendRPC "kill" [quote $ toQL i]
   case r of
     Right _ -> return ()
     Left e  -> throwError $ SurrealErr e
@@ -292,64 +304,64 @@ selectRPC target = do
   let t = case target of
             Table tn   -> toQL tn
             Record rid -> toQL rid
-  r <- getResponseValue <$> sendRPC "select" [J.String t]
+  r <- getResponseValue <$> sendRPC "select" [quote t]
   case r of
     Right r' -> return r'
     Left e   -> throwError $ SurrealErr e
 
-createRPC :: RPCConstraints es => OPTarget -> Maybe J.Value -> Eff es J.Value
+createRPC :: (RPCConstraints es, ToParam v) => OPTarget -> Maybe v -> Eff es J.Value
 createRPC target mVal = do
   let t = case target of
             Table tn   -> toQL tn
             Record rid -> toQL rid
-  r <- getResponseValue <$> sendRPC "create" (J.String t : case mVal of
-                                                 Just v -> [v]
-                                                 _      -> [])
+  r <- getResponseValue <$> sendRPC "create" (quote t : case mVal of
+                                                          Just v  -> [toParam v]
+                                                          Nothing -> [])
   case r of
     Right (Just r') -> return r'
     Right x -> throwError $ DriverErr $ DriverError $ "createRPC: Unexpected result: " <> show x
     Left e   -> throwError $ SurrealErr e
 
-insertRPC :: RPCConstraints es => TableName -> [J.Value] -> Eff es [J.Value]
+insertRPC :: (RPCConstraints es, ToParam v) => TableName -> [v] -> Eff es [J.Value]
 insertRPC tn vs = do
-  r <- getResponseValue <$> sendRPC "create" (J.String (toQL tn) : vs)
+  r <- getResponseValue <$> sendRPC "create" (quote (toQL tn) : map toParam vs)
   case r of
     Right (Just (J.Array r')) -> return $ V.toList r'
     Right x -> throwError $ DriverErr $ DriverError $ "insertRPC: Unexpected result: " <> show x
     Left e   -> throwError $ SurrealErr e
 
-updateRPC :: RPCConstraints es => OPTarget -> Maybe J.Value -> Eff es J.Value
+updateRPC :: (RPCConstraints es, ToParam v) => OPTarget -> Maybe v -> Eff es J.Value
 updateRPC target mVal = do
   let t = case target of
             Table tn   -> toQL tn
             Record rid -> toQL rid
-  r <- getResponseValue <$> sendRPC "update" (J.String t : case mVal of
-                                                 Just v -> [v]
-                                                 _      -> [])
+  r <- getResponseValue <$> sendRPC "update" (quote t : case mVal of
+                                                          Just v  -> [toParam v]
+                                                          Nothing -> [])
   case r of
     Right (Just r') -> return r'
     Right x -> throwError $ DriverErr $ DriverError $ "updateRPC: Unexpected result: " <> show x
     Left e   -> throwError $ SurrealErr e
 
-mergeRPC :: RPCConstraints es => OPTarget -> Maybe J.Value -> Eff es J.Value
+mergeRPC :: (RPCConstraints es, ToParam v) => OPTarget -> Maybe v -> Eff es J.Value
 mergeRPC target mVal = do
   let t = case target of
             Table tn   -> toQL tn
             Record rid -> toQL rid
-  r <- getResponseValue <$> sendRPC "merge" (J.String t : case mVal of
-                                                 Just v -> [v]
-                                                 _      -> [])
+  r <- getResponseValue <$> sendRPC "merge" (quote t : case mVal of
+                                                 Just v  -> [toParam v]
+                                                 Nothing -> [])
   case r of
     Right (Just r') -> return r'
     Right x -> throwError $ DriverErr $ DriverError $ "mergeRPC: Unexpected result: " <> show x
     Left e   -> throwError $ SurrealErr e
 
-patchRPC :: RPCConstraints es => OPTarget -> [J.Value] -> Eff es J.Value
+patchRPC :: (RPCConstraints es, ToParam v) => OPTarget -> [v] -> Eff es J.Value
 patchRPC target vs = do
   let t = case target of
             Table tn   -> toQL tn
             Record rid -> toQL rid
-  r <- getResponseValue <$> sendRPC "patch" (J.String t : vs)
+  r <- getResponseValue <$> sendRPC "patch" (quote t : map toParam vs)
   case r of
     Right (Just r') -> return r'
     Right x -> throwError $ DriverErr $ DriverError $ "patchRPC: Unexpected result: " <> show x
@@ -360,7 +372,7 @@ deleteRPC target = do
   let t = case target of
             Table tn   -> toQL tn
             Record rid -> toQL rid
-  r <- getResponseValue <$> sendRPC "delete" [J.String t]
+  r <- getResponseValue <$> sendRPC "delete" [quote t]
   case r of
     Right (Just r') -> return r'
     Right x -> throwError $ DriverErr $ DriverError $ "patchRPC: Unexpected result: " <> show x
