@@ -159,7 +159,7 @@ sendRPC method params = do
 queryRPC :: RPCConstraints es => input -> Query input (Either DecodeError output) -> Eff es output
 queryRPC input q = do
   let encodedInput = getEncoder q input
-  Response { result = result, error = err } <- sendRPC "query" [getSQL q, encodedInput]
+  Response { result = result, error = err } <- sendRPC "query" [quote $ getSQL q, encodedInput]
   case err of
     Just e  -> throwError $ SurrealErr e
     Nothing -> case result of
