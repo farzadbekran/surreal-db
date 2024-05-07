@@ -25,32 +25,43 @@ import           GHC.Generics
 class ToParam a where
   toParam :: a -> Text
   default toParam :: (Generic a, GToParam (Rep a)) => a -> Text
-  toParam = fromMaybe "NONE" . gtoParam . from
+  toParam = gtoParam . from
 
 class GToParam f where
-  gtoParam :: f p -> Maybe Text
+  gtoParam :: f p -> Text
 
-instance (GToParam f) => GToParam (M1 D d f) where
-  gtoParam (M1 x) = Just $ "{" <> fromMaybe "" (gtoParam x) <> "}"
+class IsRecord f where
+  isRecord :: f p -> Bool
 
-instance (GToParam f) => GToParam (M1 C c f) where
-  gtoParam (M1 x) = gtoParam x
+instance IsRecord (a :*: b) where
+  isRecord _ = True
+
+instance IsRecord (M1 S s (K1 i c)) where
+  isRecord _ = True
+
+instance (IsRecord f, GToParam f, Constructor c) => GToParam (M1 C c f) where
+  gtoParam m@(M1 x) = if isRecord x
+    then "{" <> gtoParam x <> "}"
+    else pack ("\"" <> conName m <> "\"")
+
+instance {-# OVERLAPPING #-} (Constructor c) => GToParam (M1 C c U1) where
+  gtoParam m = pack ("\"" <> conName m <> "\"")
 
 instance (Selector s, GToParam a) => GToParam (M1 S s a) where
-  gtoParam m@(M1 x) = fmap (\v -> "\"" <> pack (selName m) <> "\": " <> v) (gtoParam x)
+  gtoParam m@(M1 x) = "\"" <> pack (selName m) <> "\": " <> gtoParam x
 
 instance (GToParam a, GToParam b) => GToParam (a :*: b) where
-  gtoParam (a :*: b) = (<>) <$> gtoParam a <*> ((", " <>) <$> gtoParam b)
-
-instance GToParam U1 where
-  gtoParam _ = Just ""
+  gtoParam (a :*: b) = gtoParam a <> ", " <> gtoParam b
 
 instance (GToParam a, GToParam b) => GToParam (a :+: b) where
   gtoParam (L1 x) = gtoParam x
   gtoParam (R1 x) = gtoParam x
 
+instance (GToParam f) => GToParam (M1 D d f) where
+  gtoParam (M1 x) = gtoParam x
+
 instance ToParam c => GToParam (K1 i c) where
-  gtoParam (K1 x) = Just $ toParam x
+  gtoParam (K1 x) = toParam x
 
 instance {-# OVERLAPPING #-} Forall r ToParam => ToParam (Rec r) where
   toParam r = let fieldList = eraseWithLabels @ToParam toParam r in
@@ -68,17 +79,19 @@ instance {-# OVERLAPPING #-} ToParam a => ToParam (Maybe a) where
 
 -- | for any kind of list like data type (List, Vector, etc)
 instance {-# OVERLAPPING #-} (ToParam a, Functor t, MonoFoldable (t Text), Element (t Text) ~ Text) => ToParam (t a) where
-  toParam ta = "[" <> intercalate "," (toList $ fmap toParam ta) <> "]"
+  toParam ta = "[" <> intercalate ", " (toList $ fmap toParam ta) <> "]"
 
-data Test = Test1 | Test2
-  deriving (Generic, ToParam)
+-- data Test = Test1 | Test2 | Test3
+--   deriving (Generic, ToParam)
 
-data Test3
-  = Test3
-      { name :: !(Maybe Text)
-      , age  :: !Int
-      }
-  deriving (Generic, ToParam)
+-- data Test4
+--   = Test4
+--       { name :: !(Maybe Text)
+--       , age  :: !Int
+--       , tt   :: !Test
+--       , tt2  :: ![Test]
+--       }
+--   deriving (Generic, ToParam)
 
-tmp :: Rec ("name" .== Maybe Text .+ "age" .== Int)
-tmp = #name .== Nothing .+ #age .== 123
+-- tmp :: Rec ("name" .== Maybe Text .+ "age" .== Int)
+-- tmp = #name .== Nothing .+ #age .== 123
