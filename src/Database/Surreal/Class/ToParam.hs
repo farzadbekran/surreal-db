@@ -79,6 +79,12 @@ instance {-# OVERLAPPING #-} ToParam a => ToParam (Maybe a) where
   toParam (Just a) = toParam a
   toParam Nothing  = "NONE"
 
+instance {-# OVERLAPPING #-} ToParam Text where
+  toParam a = toStrict $ decodeUtf8 $ encode a
+
+instance {-# OVERLAPPING #-} ToParam String where
+  toParam a = toStrict $ decodeUtf8 $ encode a
+
 -- | for any kind of list like data type (List, Vector, etc)
 instance {-# OVERLAPPING #-} (ToParam a, Functor t, MonoFoldable (t Text), Element (t Text) ~ Text) => ToParam (t a) where
   toParam ta = "[" <> intercalate ", " (toList $ fmap toParam ta) <> "]"
