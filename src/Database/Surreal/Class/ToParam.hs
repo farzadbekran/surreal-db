@@ -1,20 +1,17 @@
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DefaultSignatures    #-}
-{-# LANGUAGE DeriveAnyClass       #-}
-{-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE InstanceSigs         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Database.Surreal.Class.ToParam where
 
-import           ClassyPrelude              hiding ( Builder, isNothing )
+import           ClassyPrelude          hiding ( Builder, isNothing )
 
-import           Data.Aeson                 ( encode )
+import           Data.Aeson             ( encode )
 import           Data.Aeson.Types
-import           Data.Row.Records           hiding ( map )
-import           Data.Text.Lazy.Builder     ( Builder, fromText, toLazyText )
-import           Data.Text.Lazy.Builder.Int ( decimal )
+import           Data.Row.Records       hiding ( map )
+import           Data.Text.Lazy.Builder ( Builder, fromText, toLazyText )
 import           Data.Type.Equality
 import           GHC.Generics
 
