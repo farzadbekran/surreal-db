@@ -48,7 +48,7 @@ data ConnectionInfo
       , ns   :: !Text
       , db   :: !Text
       }
-  deriving (Eq, Read, Show)
+  deriving (Eq, FromJSON, Generic, Read, Show, ToJSON)
 
 defaultConnectionInfo :: ConnectionInfo
 defaultConnectionInfo = ConnectionInfo "0.0.0.0" 8000 "root" "root" "test" "test"
