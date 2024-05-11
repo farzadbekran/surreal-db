@@ -1,5 +1,7 @@
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DefaultSignatures    #-}
+-- {-# LANGUAGE DeriveAnyClass       #-}
+-- {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE InstanceSigs         #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -38,9 +40,14 @@ instance IsRecord (a :*: b) where
 instance IsRecord (M1 S s (K1 i c)) where
   isRecord _ = True
 
+-- instance (IsRecord f, GToParam f, Constructor c) => GToParam (M1 C c f) where
+--   gtoParam m@(M1 x) = if isRecord x
+--     then "{" <> gtoParam x <> "}"
+--     else pack ("\"" <> conName m <> "\"")
+
 instance (IsRecord f, GToParam f, Constructor c) => GToParam (M1 C c f) where
   gtoParam m@(M1 x) = if isRecord x
-    then "{" <> gtoParam x <> "}"
+    then "{\"tag\": \"" <> pack (conName m) <> "\", " <> gtoParam x <> "}"
     else pack ("\"" <> conName m <> "\"")
 
 instance {-# OVERLAPPING #-} (Constructor c) => GToParam (M1 C c U1) where
@@ -99,7 +106,18 @@ instance {-# OVERLAPPING #-} (ToParam a, Functor t, MonoFoldable (t Text), Eleme
 --       , tt   :: !Test
 --       , tt2  :: ![Test]
 --       }
+--   | Test5
+--       { f1 :: !Int
+--       , f2 :: !Text
+--       }
 --   deriving (Generic, ToParam)
+
+-- data Test6
+--   = Test6
+--       { f3 :: !Int
+--       , f4 :: !Int
+--       }
+--   deriving (FromJSON, Generic, ToJSON, ToParam)
 
 -- -- toParam $ Test4 Nothing 123 Test3 [Test1, Test2]
 
