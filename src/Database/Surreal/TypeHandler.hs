@@ -13,11 +13,11 @@ module Database.Surreal.TypeHandler where
 
 import           ClassyPrelude        as P hiding ( exp, lift )
 import           Control.Monad.Fail
+import           Data.Char            ( isUpper )
 import           Data.Foldable        hiding ( elem, notElem )
 import           Data.Row
 import           Database.Surreal.AST as AST
 import qualified Language.Haskell.TH  as TH
-import Data.Char (isUpper)
 
 getFieldLabel :: MonadFail m => Field -> m Text
 getFieldLabel = \case
@@ -152,12 +152,16 @@ combineToRowType t1 t2 = TH.InfixT t2 ''(.+) t1
 mkRecType :: MonadFail m => [(Maybe Text, TypeDef)] -> m TH.Type
 mkRecType types = do
   rTypes <- mapM getRowType types
-  return $ foldr1 combineToRowType rTypes
+  case rTypes of
+    [] -> return $ TH.TupleT 0
+    ts -> return $ foldr1 combineToRowType ts
 
 mkRecTypeFromInputs :: MonadFail m => [Param] -> m TH.Type
 mkRecTypeFromInputs params = do
   rTypes <- mapM getRowTypeFromInput params
-  return $ foldr1 combineToRowType rTypes
+  case rTypes of
+    [] -> return $ TH.TupleT 0
+    ts -> return $ foldr1 combineToRowType ts
 
 getExpressionType :: MonadFail m => Exp -> m TH.Type
 getExpressionType e = do

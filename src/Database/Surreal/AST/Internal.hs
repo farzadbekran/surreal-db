@@ -657,6 +657,7 @@ instance ToQL Literal where
     RecordIDRangeL t range -> toQL t <> ":" <> toQL range
     ParamL p -> toQL p
     FieldL f -> toQL f
+    ArrayL [] -> "[]"
     ArrayL es -> "[" <> foldl1 (<>) (intersperse "," (map toQL es)) <> "]"
     ObjectL o -> toQL o
     RecordIDL i -> toQL i
