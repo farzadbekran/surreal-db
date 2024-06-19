@@ -83,7 +83,7 @@ nullL = label "NULL" $ lexeme $ caseInsensitiveSymbol "NULL" $> NullL
 boolL :: Parser Literal
 boolL = label "Bool" $ lexeme $
   BoolL False <$ caseInsensitiveSymbol "False" <|>
-  BoolL False <$ caseInsensitiveSymbol "True"
+  BoolL True <$ caseInsensitiveSymbol "True"
 
 quotedText :: Parser Text
 quotedText = label "quotedText" $ lexeme $ pack <$>

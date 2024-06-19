@@ -56,8 +56,8 @@ instance ToQL Identifier where
 
 mkIdentifier :: Text -> Maybe Identifier
 mkIdentifier t = case parse identifierWord "" (unpack t) of
-  Right r -> Just $ Ident $ pack r
-  _       -> Nothing
+  Right r    -> Just $ Ident $ pack r
+  _otherwise -> Nothing
 
 identifierWord :: Parsec Void String String
 identifierWord = do
@@ -190,18 +190,18 @@ type WhenExp = Exp
 type ThenExp = Exp
 
 data TypeDef
-  = T String [TypeDef]
+  = T !String ![TypeDef]
   deriving (Eq, Generic, Read, Show)
 
 data USE
-  = USE Namespace Database
-  | USE_NS Namespace
-  | USE_DB Database
+  = USE !Namespace !Database
+  | USE_NS !Namespace
+  | USE_DB !Database
   deriving (Eq, Generic, Read, Show)
 
 data Param
-  = SQLParam ParamName
-  | InputParam ParamName TypeDef
+  = SQLParam !ParamName
+  | InputParam !ParamName !TypeDef
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Param where
@@ -214,11 +214,11 @@ instance HasInput Param where
 
 data Field
   = WildCardField
-  | SimpleField FieldName -- ^ name
-  | IndexedField Field [Literal] -- ^ address[0]
-  | FilteredField Field WHERE -- ^ (address WHERE city = "New York")
-  | CompositeField Field Field -- ^ address.city
-  | FieldParam Param
+  | SimpleField !FieldName -- ^ name
+  | IndexedField !Field ![Literal] -- ^ address[0]
+  | FilteredField !Field !WHERE -- ^ (address WHERE city = "New York")
+  | CompositeField !Field !Field -- ^ address.city
+  | FieldParam !Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Field where
@@ -233,11 +233,11 @@ instance HasInput Field where
   getInputs = \case
     FilteredField _ w -> getInputs w
     FieldParam p -> getInputs p
-    _ -> []
+    _otherwise -> []
 
 data Edge
-  = OutEdge Field -- ^ ->bought
-  | InEdge Field -- ^ <-bought
+  = OutEdge !Field -- ^ ->bought
+  | InEdge !Field -- ^ <-bought
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Edge where
@@ -249,13 +249,13 @@ instance HasInput Edge where
   getInputs (InEdge f)  = getInputs f
 
 data Selector
-  = FieldSelector Field
-  | ExpSelector Exp Field
-  | SelectorAs Selector Field
-  | EdgeSelector (Maybe Field) [Edge] Field
+  = FieldSelector !Field
+  | ExpSelector !Exp !Field
+  | SelectorAs !Selector !Field
+  | EdgeSelector !(Maybe Field) ![Edge] !Field
   -- ^ f1->f2<-f3 or ->f2<-f3, last field is the alias for the results,
   -- we force it since the results are unreliable if the alias is not given!!
-  | TypedSelector Selector TypeDef
+  | TypedSelector !Selector !TypeDef
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Selector where
@@ -313,7 +313,7 @@ instance ToQL Text where
 
 data INDEX
   = NOINDEX
-  | INDEX [IndexName]
+  | INDEX ![IndexName]
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL INDEX where
@@ -328,7 +328,7 @@ instance ToQL WITH where
   toQL (WITH i) = toQL i
 
 data FROM
-  = FROM (Maybe ONLY) Exp (Maybe WITH)
+  = FROM !(Maybe ONLY) !Exp !(Maybe WITH)
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL FROM where
@@ -378,7 +378,7 @@ data OrderType
   = RAND
   | COLLATE
   | NUMERIC
-  | OrderTypeParam Param
+  | OrderTypeParam !Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL OrderType where
@@ -395,7 +395,7 @@ instance HasInput OrderType where
 data OrderDirection
   = ASC
   | DESC
-  | OrderDirectionParam Param
+  | OrderDirectionParam !Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL OrderDirection where
@@ -428,8 +428,8 @@ instance HasInput ORDER where
     os
 
 data LIMIT
-  = LIMIT Int64
-  | LIMITParam Param
+  = LIMIT !Int64
+  | LIMITParam !Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL LIMIT where
@@ -441,8 +441,8 @@ instance HasInput LIMIT where
   getInputs _              = []
 
 data TimeStamp
-  = TimeStamp UTCTime
-  | TimeStampParam Param
+  = TimeStamp !UTCTime
+  | TimeStampParam !Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL TimeStamp where
@@ -454,8 +454,8 @@ instance HasInput TimeStamp where
   getInputs _                  = []
 
 data START
-  = START Int64
-  | STARTParam Param
+  = START !Int64
+  | STARTParam !Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL START where
@@ -500,15 +500,15 @@ instance ToQL EXPLAIN where
 -- | duration formats like "1y2w3d", surreal db currently does not support months
 data Duration
   = Duration
-      { _y  :: Int64
-      , _w  :: Int64
-      , _d  :: Int64
-      , _h  :: Int64
-      , _m  :: Int64
-      , _s  :: Int64
-      , _ms :: Int64
-      , _us :: Int64
-      , _ns :: Int64
+      { _y  :: !Int64
+      , _w  :: !Int64
+      , _d  :: !Int64
+      , _h  :: !Int64
+      , _m  :: !Int64
+      , _s  :: !Int64
+      , _ms :: !Int64
+      , _us :: !Int64
+      , _ns :: !Int64
       }
   deriving (Eq, Generic, Read, Show)
 
@@ -554,8 +554,8 @@ instance HasInput Object where
       fs
 
 data RecordID
-  = RecordID TableName ID
-  | RecordIDParam Param
+  = RecordID !TableName !ID
+  | RecordIDParam !Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL RecordID where
@@ -576,12 +576,12 @@ instance ToQL RandFNName where
     RNULID -> "ulid()"
 
 data ID
-  = TextID Text
-  | NumID Int64
-  | ObjID Object
-  | TupID [Exp]
-  | RandomID RandFNName
-  | IDParam Param
+  = TextID !Text
+  | NumID !Int64
+  | ObjID !Object
+  | TupID ![Exp]
+  | RandomID !RandFNName
+  | IDParam !Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL ID where
@@ -600,9 +600,9 @@ instance HasInput ID where
   getInputs _           = []
 
 data IDRange
-  = IDRangeGT ID
-  | IDRangeLT ID
-  | IDRangeBetween ID ID
+  = IDRangeGT !ID
+  | IDRangeLT !ID
+  | IDRangeBetween !ID !ID
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL IDRange where
@@ -618,20 +618,20 @@ instance HasInput IDRange where
 data Literal
   = NoneL
   | NullL
-  | BoolL Bool
-  | TextL Text
-  | Int64L Int64
-  | FloatL Float
-  | DateTimeL UTCTime
-  | DurationL Duration
-  | ObjectL Object
-  | ArrayL [Exp]
-  | RecordIDL RecordID
-  | RecordIDRangeL TableName IDRange
-  | FutureL Exp
-  | FieldL Field
-  | ParamL Param
-  | RegexL Text
+  | BoolL !Bool
+  | TextL !Text
+  | Int64L !Int64
+  | FloatL !Float
+  | DateTimeL !UTCTime
+  | DurationL !Duration
+  | ObjectL !Object
+  | ArrayL ![Exp]
+  | RecordIDL !RecordID
+  | RecordIDRangeL !TableName !IDRange
+  | FutureL !Exp
+  | FieldL !Field
+  | ParamL !Param
+  | RegexL !Text
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Literal where
@@ -673,7 +673,7 @@ instance HasInput Literal where
     RecordIDRangeL _ range -> getInputs range
     ParamL p -> getInputs p
     FieldL f -> getInputs f
-    _ -> []
+    _otherwise -> []
 
 data IGNORE = IGNORE
   deriving (Eq, Generic, Read, Show)
@@ -692,9 +692,9 @@ instance HasInput OnDuplicate where
   getInputs (OnDuplicate es) = concatMap getInputs es
 
 data InsertVal
-  = InsertObjects [Object]
-  | InsertValues [Field] [[Exp]] (Maybe OnDuplicate)
-  | InsertParam Param
+  = InsertObjects ![Object]
+  | InsertValues ![Field] ![[Exp]] !(Maybe OnDuplicate)
+  | InsertParam !Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL InsertVal where
@@ -722,10 +722,10 @@ instance HasInput InsertVal where
     <> maybe [] getInputs od
 
 data Target
-  = TargetTable TableName
-  | TargetRecID RecordID
-  | TargetEdge RecordID [Edge]
-  | TargetParam Param
+  = TargetTable !TableName
+  | TargetRecID !RecordID
+  | TargetEdge !RecordID ![Edge]
+  | TargetParam !Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Target where
@@ -743,8 +743,8 @@ instance HasInput Target where
     TargetParam p -> getInputs p
 
 data CreateVal
-  = CreateObject Exp
-  | CreateValues [(Field, Exp)]
+  = CreateObject !Exp
+  | CreateValues ![(Field, Exp)]
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL CreateVal where
@@ -761,10 +761,10 @@ instance HasInput CreateVal where
       getTupleInputs (f,v) = getInputs f <> getInputs v
 
 data UpdateVal
-  = UpdateObject Exp
-  | UpdateValues [(Field, Exp)]
-  | UpdateMerge Exp
-  | UpdatePatch Exp
+  = UpdateObject !Exp
+  | UpdateValues ![(Field, Exp)]
+  | UpdateMerge !Exp
+  | UpdatePatch !Exp
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL UpdateVal where
@@ -789,7 +789,7 @@ data ReturnType
   | RTBefore
   | RTAfter
   | RTDiff
-  | RTProjections Selectors
+  | RTProjections !Selectors
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL ReturnType where
@@ -801,7 +801,7 @@ instance ToQL ReturnType where
     RTProjections (Selectors ss) -> "RETURN " <> prepText (intersperse "," $ map toQL ss)
 
 data RelateTarget
-  = RelateTarget RecordID TableName RecordID
+  = RelateTarget !RecordID !TableName !RecordID
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL RelateTarget where
@@ -824,8 +824,8 @@ data InfoParam
   = IPRoot
   | IPNS
   | IPDB
-  | IPScope ScopeName
-  | IPTable TableName
+  | IPScope !ScopeName
+  | IPTable !TableName
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL InfoParam where
@@ -837,27 +837,27 @@ instance ToQL InfoParam where
     IPTable tn -> "TABLE " <> toQL tn
 
 data Exp
-  = TypedE Exp TypeDef
-  | OPE Operator Exp Exp
-  | AppE FNName [Exp]
-  | LitE Literal
-  | ConstE Identifier
-  | IfThenE Exp Exp
-  | IfThenElseE Exp Exp Exp
-  | EdgeSelectorE (Maybe Field) [Edge]
-  | SelectE (Maybe VALUE) Selectors (Maybe OMIT) FROM (Maybe WHERE) (Maybe SPLIT) (Maybe GROUP) (Maybe ORDER) (Maybe LIMIT) (Maybe START) (Maybe FETCH) (Maybe TIMEOUT) (Maybe PARALLEL) (Maybe EXPLAIN)
-  | LiveSelectE (Maybe VALUE) (Either DIFF Selectors) FROM (Maybe WHERE) (Maybe FETCH)
-  | InsertE (Maybe IGNORE) Target InsertVal
-  | CreateE (Maybe ONLY) Target CreateVal (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
-  | DeleteE (Maybe ONLY) Target (Maybe WHERE) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
-  | UpdateE (Maybe ONLY) Target UpdateVal (Maybe WHERE) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
-  | RelateE (Maybe ONLY) RelateTarget (Maybe UpdateVal) (Maybe ReturnType) (Maybe TIMEOUT) (Maybe PARALLEL)
-  | WhereE WHERE -- ^ needed this to support table permissions
-  | ReturnE Exp
-  | InParenE Exp
-  | InfoE InfoParam
-  | ShowChangesE TableName (Maybe TimeStamp) (Maybe LIMIT)
-  | BlockE Block
+  = TypedE !Exp !TypeDef
+  | OPE !Operator !Exp !Exp
+  | AppE !FNName ![Exp]
+  | LitE !Literal
+  | ConstE !Identifier
+  | IfThenE !Exp !Exp
+  | IfThenElseE !Exp !Exp !Exp
+  | EdgeSelectorE !(Maybe Field) ![Edge]
+  | SelectE !(Maybe VALUE) !Selectors !(Maybe OMIT) !FROM !(Maybe WHERE) !(Maybe SPLIT) !(Maybe GROUP) !(Maybe ORDER) !(Maybe LIMIT) !(Maybe START) !(Maybe FETCH) !(Maybe TIMEOUT) !(Maybe PARALLEL) !(Maybe EXPLAIN)
+  | LiveSelectE !(Maybe VALUE) !(Either DIFF Selectors) !FROM !(Maybe WHERE) !(Maybe FETCH)
+  | InsertE !(Maybe IGNORE) !Target !InsertVal
+  | CreateE !(Maybe ONLY) !Target !CreateVal !(Maybe ReturnType) !(Maybe TIMEOUT) !(Maybe PARALLEL)
+  | DeleteE !(Maybe ONLY) !Target !(Maybe WHERE) !(Maybe ReturnType) !(Maybe TIMEOUT) !(Maybe PARALLEL)
+  | UpdateE !(Maybe ONLY) !Target !UpdateVal !(Maybe WHERE) !(Maybe ReturnType) !(Maybe TIMEOUT) !(Maybe PARALLEL)
+  | RelateE !(Maybe ONLY) !RelateTarget !(Maybe UpdateVal) !(Maybe ReturnType) !(Maybe TIMEOUT) !(Maybe PARALLEL)
+  | WhereE !WHERE -- ^ needed this to support table permissions
+  | ReturnE !Exp
+  | InParenE !Exp
+  | InfoE !InfoParam
+  | ShowChangesE !TableName !(Maybe TimeStamp) !(Maybe LIMIT)
+  | BlockE !Block
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Exp where
@@ -1017,8 +1017,8 @@ instance ToQL NSDBScope where
     NSDBScopeDB -> "DATABASE"
 
 data UserPassword
-  = PASSWORD Text
-  | PASSHASH Text
+  = PASSWORD !Text
+  | PASSHASH !Text
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL UserPassword where
@@ -1038,7 +1038,7 @@ instance ToQL UserRole where
 data TokenScope
   = TSNS
   | TSDB
-  | TSScope ScopeName
+  | TSScope !ScopeName
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL TokenScope where
@@ -1090,7 +1090,7 @@ instance ToQL SchemaType where
 data TablePermissions
   = TPNONE
   | TPFULL
-  | TablePermissions [([OperationType], Exp)]
+  | TablePermissions ![([OperationType], Exp)]
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL TablePermissions where
@@ -1124,12 +1124,12 @@ instance ToQL GeometryType where
 
 data DataType
   = AnyT
-  | OrT DataType DataType
-  | OptionalT DataType
-  | ArrayT (Maybe (DataType, Maybe Int64))
-  | SetT (Maybe (DataType, Maybe Int64))
-  | RecordT [TableName]
-  | GeometryT [GeometryType]
+  | OrT !DataType !DataType
+  | OptionalT !DataType
+  | ArrayT !(Maybe (DataType, Maybe Int64))
+  | SetT !(Maybe (DataType, Maybe Int64))
+  | RecordT ![TableName]
+  | GeometryT ![GeometryType]
   | BoolT
   | DateTimeT
   | DecimalT
@@ -1152,8 +1152,8 @@ instance ToQL DataType where
     SetT (Just (dt, Nothing)) -> "set<" <> toQL dt <> ">"
     SetT (Just (dt, Just i)) -> "set<" <> toQL dt <> "," <> tshow i <> ">"
     SetT Nothing -> "set"
-    RecordT tns -> "record<" <> (intercalate " | " $ map toQL tns) <> ">"
-    GeometryT gts -> "geometry<" <> (intercalate " | " $ map toQL gts) <> ">"
+    RecordT tns -> "record<" <> intercalate " | " (map toQL tns) <> ">"
+    GeometryT gts -> "geometry<" <> intercalate " | " (map toQL gts) <> ">"
     BoolT -> "bool"
     StringT -> "string"
     DateTimeT -> "datetime"
@@ -1165,7 +1165,7 @@ instance ToQL DataType where
     ObjectT -> "object"
 
 data FieldType
-  = FieldType (Maybe Flexible) DataType
+  = FieldType !(Maybe Flexible) !DataType
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL FieldType where
@@ -1188,8 +1188,8 @@ data Filter
   = ASCII
   | Lowercase
   | Uppercase
-  | Edgengram Min Max
-  | Snowball LanguageName
+  | Edgengram !Min !Max
+  | Snowball !LanguageName
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Filter where
@@ -1222,7 +1222,7 @@ instance ToQL BM25 where
     Nothing      -> ""
 
 data SearchAnalyzer
-  = SearchAnalyzer AnalyzerName (Maybe BM25) (Maybe HIGHLIGHTS)
+  = SearchAnalyzer !AnalyzerName !(Maybe BM25) !(Maybe HIGHLIGHTS)
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL SearchAnalyzer where
@@ -1241,16 +1241,16 @@ instance ToQL READONLY where
   toQL _ = "READONLY"
 
 data Define
-  = DefNamespace Namespace
-  | DefDatabase Database
-  | DefUser UserName UserScope (Maybe UserPassword) (Maybe [UserRole])
-  | DefToken TokenName TokenScope TokenType TokenValue
-  | DefScope ScopeName (Maybe Duration) (Maybe SignUpExp) (Maybe SignInExp)
-  | DefTable TableName (Maybe DROP) (Maybe SchemaType) (Maybe AsTableViewExp) (Maybe Duration) (Maybe TablePermissions)
-  | DefEvent EventName TableName (Maybe WhenExp) ThenExp
-  | DefField Field TableName (Maybe FieldType) (Maybe DefaultExp) (Maybe ValueExp) (Maybe READONLY) (Maybe AssertExp) (Maybe TablePermissions)
-  | DefAnalyzer AnalyzerName (Maybe [Tokenizer]) (Maybe [Filter])
-  | DefIndex IndexName TableName [Field] (Maybe (Either UNIQUE SearchAnalyzer))
+  = DefNamespace !Namespace
+  | DefDatabase !Database
+  | DefUser !UserName !UserScope !(Maybe UserPassword) !(Maybe [UserRole])
+  | DefToken !TokenName !TokenScope !TokenType !TokenValue
+  | DefScope !ScopeName !(Maybe Duration) !(Maybe SignUpExp) !(Maybe SignInExp)
+  | DefTable !TableName !(Maybe DROP) !(Maybe SchemaType) !(Maybe AsTableViewExp) !(Maybe Duration) !(Maybe TablePermissions)
+  | DefEvent !EventName !TableName !(Maybe WhenExp) !ThenExp
+  | DefField !Field !TableName !(Maybe FieldType) !(Maybe DefaultExp) !(Maybe ValueExp) !(Maybe READONLY) !(Maybe AssertExp) !(Maybe TablePermissions)
+  | DefAnalyzer !AnalyzerName !(Maybe [Tokenizer]) !(Maybe [Filter])
+  | DefIndex !IndexName !TableName ![Field] !(Maybe (Either UNIQUE SearchAnalyzer))
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Define where
@@ -1362,18 +1362,18 @@ instance ToQL Define where
          ]
 
 data Remove
-  = RMNS Namespace
-  | RMDB Database
-  | RMUser UserName UserScope
-  | RMLogin LoginName NSDBScope
-  | RMToken TokenName NSDBScope
-  | RMScope ScopeName
-  | RMTable TableName
-  | RMEvent EventName TableName
-  | RMFN FNName
-  | RMField FieldName TableName
-  | RMIndex IndexName TableName
-  | RMParam ParamName
+  = RMNS !Namespace
+  | RMDB !Database
+  | RMUser !UserName !UserScope
+  | RMLogin !LoginName !NSDBScope
+  | RMToken !TokenName !NSDBScope
+  | RMScope !ScopeName
+  | RMTable !TableName
+  | RMEvent !EventName !TableName
+  | RMFN !FNName
+  | RMField !FieldName !TableName
+  | RMIndex !IndexName !TableName
+  | RMParam !ParamName
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Remove where
@@ -1392,8 +1392,8 @@ instance ToQL Remove where
     RMParam p -> "PARAM " <> toQL p
 
 data KillParam
-  = KPUUID Text
-  | KPParam Param
+  = KPUUID !Text
+  | KPParam !Param
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL KillParam where
@@ -1407,19 +1407,19 @@ instance HasInput KillParam where
     KPParam p -> getInputs p
 
 data Statement
-  = UseS USE
-  | LetS Param Exp
+  = UseS !USE
+  | LetS !Param !Exp
   | BeginS
   | CancelS
   | CommitS
   | BreakS
   | ContinueS
-  | ForS Param Exp Block
-  | DefineS Define
-  | RemoveS Remove
-  | ThrowS Exp
-  | KillS KillParam
-  | SleepS Duration
+  | ForS !Param !Exp !Block
+  | DefineS !Define
+  | RemoveS !Remove
+  | ThrowS !Exp
+  | KillS !KillParam
+  | SleepS !Duration
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL Statement where
@@ -1446,11 +1446,11 @@ instance HasInput Statement where
     LetS _ e -> getInputs e
     ForS _ e b -> getInputs e <> getInputs b
     ThrowS t -> getInputs t
-    _ -> []
+    _otherwise -> []
 
 data SurQLLine
-  = ExpLine Exp
-  | StatementLine Statement
+  = ExpLine !Exp
+  | StatementLine !Statement
   deriving (Eq, Generic, Read, Show)
 
 instance ToQL SurQLLine where
