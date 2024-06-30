@@ -45,7 +45,7 @@ instance (HasInput a, HasInput b) => HasInput (Either a b) where
 -- | use `mkIdentifier` to create a valid identifier
 newtype Identifier
   = Ident Text
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 pattern ID :: Text -> Identifier
 pattern ID t <- Ident t
@@ -70,13 +70,13 @@ isValidIdentifierChar c = isAlphaNum c || c == '_'
 
 newtype FNName
   = FNName [Identifier]
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL FNName where
   toQL (FNName parts) = intercalate "::" (map toQL parts)
 
 data Operator = (:&&) | (:||) | (:??) | (:?:) | (:=) | (:!=) | (:==) | (:?=) | (:*=) | (:~) | (:!~) | (:?~) | (:*~) | (:<) | (:<=) | (:>) | (:>=) | (:+) | (:-) | (:*) | (:/) | (:**) | (:+=) | (:-=) | IN | NOTIN | CONTAINS | CONTAINSNOT | CONTAINSALL | CONTAINSANY | CONTAINSNONE | INSIDE | NOTINSIDE | ALLINSIDE | ANYINSIDE | NONEINSIDE | OUTSIDE | INTERSECTS | (:@@)
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Operator where
   toQL = \case
@@ -122,55 +122,55 @@ instance ToQL Operator where
 
 newtype Namespace
   = Namespace Identifier
-  deriving (Eq, Generic, Read, Show, ToQL)
+  deriving (Eq, Generic, Ord, Read, Show, ToQL)
 
 newtype Database
   = Database Identifier
-  deriving (Eq, Generic, Read, Show, ToQL)
+  deriving (Eq, Generic, Ord, Read, Show, ToQL)
 
 newtype TableName
   = TableName Identifier
-  deriving (Eq, Generic, Read, Show, ToQL)
+  deriving (Eq, Generic, Ord, Read, Show, ToQL)
 
 newtype UserName
   = UserName Identifier
-  deriving (Eq, Generic, Read, Show, ToQL)
+  deriving (Eq, Generic, Ord, Read, Show, ToQL)
 
 newtype ScopeName
   = ScopeName Identifier
-  deriving (Eq, Generic, Read, Show, ToQL)
+  deriving (Eq, Generic, Ord, Read, Show, ToQL)
 
 newtype TokenName
   = TokenName Identifier
-  deriving (Eq, Generic, Read, Show, ToQL)
+  deriving (Eq, Generic, Ord, Read, Show, ToQL)
 
 newtype EventName
   = EventName Identifier
-  deriving (Eq, Generic, Read, Show, ToQL)
+  deriving (Eq, Generic, Ord, Read, Show, ToQL)
 
 newtype FieldName
   = FieldName Identifier
-  deriving (Eq, Generic, Read, Show, ToQL)
+  deriving (Eq, Generic, Ord, Read, Show, ToQL)
 
 newtype ParamName
   = ParamName Identifier
-  deriving (Eq, Generic, Read, Show, ToQL)
+  deriving (Eq, Generic, Ord, Read, Show, ToQL)
 
 newtype AnalyzerName
   = AnalyzerName Identifier
-  deriving (Eq, Generic, Read, Show, ToQL)
+  deriving (Eq, Generic, Ord, Read, Show, ToQL)
 
 newtype LanguageName
   = LanguageName Identifier
-  deriving (Eq, Generic, Read, Show, ToQL)
+  deriving (Eq, Generic, Ord, Read, Show, ToQL)
 
 newtype IndexName
   = IndexName Identifier
-  deriving (Eq, Generic, Read, Show, ToQL)
+  deriving (Eq, Generic, Ord, Read, Show, ToQL)
 
 newtype LoginName
   = LoginName Identifier
-  deriving (Eq, Generic, Read, Show, ToQL)
+  deriving (Eq, Generic, Ord, Read, Show, ToQL)
 
 type TokenValue = Text
 
@@ -191,18 +191,18 @@ type ThenExp = Exp
 
 data TypeDef
   = T !String ![TypeDef]
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 data USE
   = USE !Namespace !Database
   | USE_NS !Namespace
   | USE_DB !Database
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 data Param
   = SQLParam !ParamName
   | InputParam !ParamName !TypeDef
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Param where
   toQL (SQLParam t)     = "$" <> toQL t
@@ -219,7 +219,7 @@ data Field
   | FilteredField !Field !WHERE -- ^ (address WHERE city = "New York")
   | CompositeField !Field !Field -- ^ address.city
   | FieldParam !Param
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Field where
   toQL WildCardField = "*"
@@ -238,7 +238,7 @@ instance HasInput Field where
 data Edge
   = OutEdge !Field -- ^ ->bought
   | InEdge !Field -- ^ <-bought
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Edge where
   toQL (OutEdge f) = "->" <> toQL f
@@ -256,7 +256,7 @@ data Selector
   -- ^ f1->f2<-f3 or ->f2<-f3, last field is the alias for the results,
   -- we force it since the results are unreliable if the alias is not given!!
   | TypedSelector !Selector !TypeDef
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Selector where
   toQL = \case
@@ -279,7 +279,7 @@ instance HasInput Selector where
 
 newtype Selectors
   = Selectors [Selector]
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Selectors where
   toQL (Selectors []) = ""
@@ -289,21 +289,21 @@ instance HasInput Selectors where
   getInputs (Selectors ss) = concatMap getInputs ss
 
 data VALUE = VALUE
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL VALUE where
   toQL VALUE = "VALUE"
 
 newtype OMIT
   = OMIT [Field]
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL OMIT where
   toQL (OMIT []) = ""
   toQL (OMIT fs) = prepText $ ["OMIT"] <> intersperse "," (map toQL fs)
 
 data ONLY = ONLY
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL ONLY where
   toQL ONLY = "ONLY"
@@ -314,7 +314,7 @@ instance ToQL Text where
 data INDEX
   = NOINDEX
   | INDEX ![IndexName]
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL INDEX where
   toQL NOINDEX    = "NOINDEX"
@@ -322,14 +322,14 @@ instance ToQL INDEX where
 
 newtype WITH
   = WITH INDEX
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL WITH where
   toQL (WITH i) = toQL i
 
 data FROM
   = FROM !(Maybe ONLY) !Exp !(Maybe WITH)
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL FROM where
   toQL (FROM mOnly e mWith) =
@@ -344,7 +344,7 @@ instance HasInput FROM where
 
 newtype WHERE
   = WHERE Exp
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL WHERE where
   toQL (WHERE e) = prepText ["WHERE", toQL e]
@@ -354,7 +354,7 @@ instance HasInput WHERE where
 
 newtype SPLIT
   = SPLIT [Field]
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL SPLIT where
   toQL (SPLIT []) = ""
@@ -365,7 +365,7 @@ instance HasInput SPLIT where
 
 newtype GROUP
   = GROUP [Field]
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL GROUP where
   toQL (GROUP []) = ""
@@ -379,7 +379,7 @@ data OrderType
   | COLLATE
   | NUMERIC
   | OrderTypeParam !Param
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL OrderType where
   toQL = \case
@@ -396,7 +396,7 @@ data OrderDirection
   = ASC
   | DESC
   | OrderDirectionParam !Param
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL OrderDirection where
   toQL = \case
@@ -410,7 +410,7 @@ instance HasInput OrderDirection where
 
 newtype ORDER
   = ORDER [(Field, Maybe OrderType, Maybe OrderDirection)]
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL ORDER where
   toQL (ORDER []) = ""
@@ -430,7 +430,7 @@ instance HasInput ORDER where
 data LIMIT
   = LIMIT !Int64
   | LIMITParam !Param
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL LIMIT where
   toQL (LIMIT i)      = "LIMIT " <> tshow i
@@ -443,7 +443,7 @@ instance HasInput LIMIT where
 data TimeStamp
   = TimeStamp !UTCTime
   | TimeStampParam !Param
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL TimeStamp where
   toQL (TimeStamp ts)     = pack $ "\"" <> formatISO8601 ts <> "\""
@@ -456,7 +456,7 @@ instance HasInput TimeStamp where
 data START
   = START !Int64
   | STARTParam !Param
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL START where
   toQL (START i)      = "START " <> tshow i
@@ -468,7 +468,7 @@ instance HasInput START where
 
 newtype FETCH
   = FETCH [Field]
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL FETCH where
   toQL (FETCH []) = ""
@@ -479,19 +479,19 @@ instance HasInput FETCH where
 
 newtype TIMEOUT
   = TIMEOUT Duration
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL TIMEOUT where
   toQL (TIMEOUT d)      = "TIMEOUT " <> toQL d
 
 data PARALLEL = PARALLEL
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL PARALLEL where
   toQL PARALLEL = "PARALLEL"
 
 data EXPLAIN = EXPLAIN | EXPLAINFULL
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL EXPLAIN where
   toQL EXPLAIN     = "EXPLAIN"
@@ -510,7 +510,7 @@ data Duration
       , _us :: !Int64
       , _ns :: !Int64
       }
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Duration where
   toQL Duration { _y
@@ -540,7 +540,7 @@ defaultDuration = Duration 0 0 0 0 0 0 0 0 0
 
 newtype Object
   = Object [(Field, Exp)]
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Object where
   toQL (Object fs) = prepText $ "{" : intersperse "," (map renderField fs) <> ["}"]
@@ -556,7 +556,7 @@ instance HasInput Object where
 data RecordID
   = RecordID !TableName !ID
   | RecordIDParam !Param
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL RecordID where
   toQL (RecordID t i)    = toQL t <> ":" <> toQL i
@@ -567,7 +567,7 @@ instance HasInput RecordID where
   getInputs (RecordID _ i)    = getInputs i
 
 data RandFNName = RNUUID | RNRAND | RNULID
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL RandFNName where
   toQL = \case
@@ -582,7 +582,7 @@ data ID
   | TupID ![Exp]
   | RandomID !RandFNName
   | IDParam !Param
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL ID where
   toQL = \case
@@ -603,7 +603,7 @@ data IDRange
   = IDRangeGT !ID
   | IDRangeLT !ID
   | IDRangeBetween !ID !ID
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL IDRange where
   toQL (IDRangeLT i)          = ".." <> toQL i
@@ -632,7 +632,7 @@ data Literal
   | FieldL !Field
   | ParamL !Param
   | RegexL !Text
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Literal where
   toQL = \case
@@ -676,14 +676,14 @@ instance HasInput Literal where
     _otherwise -> []
 
 data IGNORE = IGNORE
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL IGNORE where
   toQL IGNORE = "IGNORE"
 
 newtype OnDuplicate
   = OnDuplicate [Exp]
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL OnDuplicate where
   toQL (OnDuplicate es) = foldl1 (<>) $ intersperse "," $ map toQL es
@@ -695,7 +695,7 @@ data InsertVal
   = InsertObjects ![Object]
   | InsertValues ![Field] ![[Exp]] !(Maybe OnDuplicate)
   | InsertParam !Param
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL InsertVal where
   toQL (InsertParam p) = toQL p
@@ -726,7 +726,7 @@ data Target
   | TargetRecID !RecordID
   | TargetEdge !RecordID ![Edge]
   | TargetParam !Param
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Target where
   toQL (TargetTable tn)  = toQL tn
@@ -745,7 +745,7 @@ instance HasInput Target where
 data CreateVal
   = CreateObject !Exp
   | CreateValues ![(Field, Exp)]
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL CreateVal where
   toQL (CreateObject o)  = "CONTENT " <> toQL o
@@ -765,7 +765,7 @@ data UpdateVal
   | UpdateValues ![(Field, Exp)]
   | UpdateMerge !Exp
   | UpdatePatch !Exp
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL UpdateVal where
   toQL (UpdateObject o)  = "CONTENT " <> toQL o
@@ -790,7 +790,7 @@ data ReturnType
   | RTAfter
   | RTDiff
   | RTProjections !Selectors
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL ReturnType where
   toQL = \case
@@ -802,7 +802,7 @@ instance ToQL ReturnType where
 
 data RelateTarget
   = RelateTarget !RecordID !TableName !RecordID
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL RelateTarget where
   toQL (RelateTarget rid1 tn rid2)
@@ -812,7 +812,7 @@ instance HasInput RelateTarget where
   getInputs (RelateTarget rid1 _ rid2) = getInputs rid1 <> getInputs rid2
 
 data DIFF = DIFF
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL DIFF where
   toQL _ = "DIFF"
@@ -826,7 +826,7 @@ data InfoParam
   | IPDB
   | IPScope !ScopeName
   | IPTable !TableName
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL InfoParam where
   toQL = \case
@@ -858,7 +858,7 @@ data Exp
   | InfoE !InfoParam
   | ShowChangesE !TableName !(Maybe TimeStamp) !(Maybe LIMIT)
   | BlockE !Block
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Exp where
   toQL = \case
@@ -1000,7 +1000,7 @@ instance HasInput Exp where
     BlockE (Block ls) -> concatMap getInputs ls
 
 data UserScope = USROOT | USNS | USDB
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL UserScope where
   toQL = \case
@@ -1009,7 +1009,7 @@ instance ToQL UserScope where
     USDB -> "ON DATABASE"
 
 data NSDBScope = NSDBScopeNS | NSDBScopeDB
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL NSDBScope where
   toQL = \case
@@ -1019,7 +1019,7 @@ instance ToQL NSDBScope where
 data UserPassword
   = PASSWORD !Text
   | PASSHASH !Text
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL UserPassword where
   toQL = \case
@@ -1027,7 +1027,7 @@ instance ToQL UserPassword where
     PASSHASH t -> "PASSHASH '" <> t <> "'"
 
 data UserRole = UROWNER | UREDITOR | URVIEWER
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL UserRole where
   toQL = \case
@@ -1039,7 +1039,7 @@ data TokenScope
   = TSNS
   | TSDB
   | TSScope !ScopeName
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL TokenScope where
   toQL = \case
@@ -1048,7 +1048,7 @@ instance ToQL TokenScope where
     TSScope t -> "ON SCOPE " <> toQL t
 
 data TokenType = EDDSA | ES256 | ES384 | ES512 | PS256 | PS384 | PS512 | RS256 | RS384 | RS512
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL TokenType where
   toQL = \case
@@ -1064,13 +1064,13 @@ instance ToQL TokenType where
     RS512 -> "TYPE RS512"
 
 data DROP = DROP
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL DROP where
   toQL _ = "DROP"
 
 data OperationType = OTSelect | OTCreate | OTUpdate | OTDelete
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL OperationType where
   toQL = \case
@@ -1080,7 +1080,7 @@ instance ToQL OperationType where
     OTDelete -> "delete"
 
 data SchemaType = SCHEMAFULL | SCHEMALESS
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL SchemaType where
   toQL = \case
@@ -1091,7 +1091,7 @@ data TablePermissions
   = TPNONE
   | TPFULL
   | TablePermissions ![([OperationType], Exp)]
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL TablePermissions where
   toQL = \case
@@ -1103,13 +1103,13 @@ instance ToQL TablePermissions where
         renderPermission (ots, e) = "FOR " <> intercalate "," (map toQL ots) <> " " <> toQL e
 
 data Flexible = Flexible
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 data Optional = Optional
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 data GeometryType = Feature | Point | Line | Polygon | Multipoint | Multiline | Multipolygon | Collection
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL GeometryType where
   toQL = \case
@@ -1139,7 +1139,7 @@ data DataType
   | NumberT
   | StringT
   | ObjectT
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL DataType where
   toQL = \case
@@ -1166,7 +1166,7 @@ instance ToQL DataType where
 
 data FieldType
   = FieldType !(Maybe Flexible) !DataType
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL FieldType where
   toQL (FieldType flex dt)
@@ -1175,7 +1175,7 @@ instance ToQL FieldType where
     <> toQL dt
 
 data Tokenizer = BLANK | CAMEL | CLASS | PUNCT
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Tokenizer where
   toQL = \case
@@ -1190,7 +1190,7 @@ data Filter
   | Uppercase
   | Edgengram !Min !Max
   | Snowball !LanguageName
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Filter where
   toQL = \case
@@ -1201,20 +1201,20 @@ instance ToQL Filter where
     Snowball ln -> "snowball(" <> toQL ln <> ")"
 
 data UNIQUE = UNIQUE
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL UNIQUE where
   toQL _ = "UNIQUE"
 
 data HIGHLIGHTS = HIGHLIGHTS
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL HIGHLIGHTS where
   toQL _ = "HIGHLIGHTS"
 
 newtype BM25
   = BM25 (Maybe (K1, B))
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL BM25 where
   toQL (BM25 mParams) = "BM25" <> case mParams of
@@ -1223,7 +1223,7 @@ instance ToQL BM25 where
 
 data SearchAnalyzer
   = SearchAnalyzer !AnalyzerName !(Maybe BM25) !(Maybe HIGHLIGHTS)
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL SearchAnalyzer where
   toQL (SearchAnalyzer an mBM25 mHighlights)
@@ -1235,7 +1235,7 @@ instance ToQL SearchAnalyzer where
       ]
 
 data READONLY = READONLY
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL READONLY where
   toQL _ = "READONLY"
@@ -1251,7 +1251,7 @@ data Define
   | DefField !Field !TableName !(Maybe FieldType) !(Maybe DefaultExp) !(Maybe ValueExp) !(Maybe READONLY) !(Maybe AssertExp) !(Maybe TablePermissions)
   | DefAnalyzer !AnalyzerName !(Maybe [Tokenizer]) !(Maybe [Filter])
   | DefIndex !IndexName !TableName ![Field] !(Maybe (Either UNIQUE SearchAnalyzer))
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Define where
   toQL = \case
@@ -1374,7 +1374,7 @@ data Remove
   | RMField !FieldName !TableName
   | RMIndex !IndexName !TableName
   | RMParam !ParamName
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Remove where
   toQL = \case
@@ -1394,7 +1394,7 @@ instance ToQL Remove where
 data KillParam
   = KPUUID !Text
   | KPParam !Param
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL KillParam where
   toQL = \case
@@ -1420,7 +1420,7 @@ data Statement
   | ThrowS !Exp
   | KillS !KillParam
   | SleepS !Duration
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Statement where
   toQL = \case
@@ -1451,7 +1451,7 @@ instance HasInput Statement where
 data SurQLLine
   = ExpLine !Exp
   | StatementLine !Statement
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL SurQLLine where
   toQL (ExpLine e)       = toQL e
@@ -1464,7 +1464,7 @@ instance HasInput SurQLLine where
 
 newtype Block
   = Block [SurQLLine]
-  deriving (Eq, Generic, Read, Show)
+  deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Block where
   toQL (Block ls) = foldl1 (<>) (intersperse ";\n" $ map toQL ls) <> ";\n"
