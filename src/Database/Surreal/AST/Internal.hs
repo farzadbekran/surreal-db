@@ -63,6 +63,7 @@ identifierWord :: Parsec Void String String
 identifierWord = do
   initial <- satisfy isAlpha
   rest <- optional $ some $ satisfy isValidIdentifierChar
+  eof
   return $ initial : fromMaybe "" rest
 
 isValidIdentifierChar :: Char -> Bool
@@ -224,7 +225,7 @@ data Field
 instance ToQL Field where
   toQL WildCardField = "*"
   toQL (SimpleField t) = toQL t
-  toQL (IndexedField t is) = prepText $ [toQL t] <> concatMap (\i -> ["[", toQL i, "]"]) is
+  toQL (IndexedField t is) = toQL t <> prepText (concatMap (\i -> ["[", toQL i, "]"]) is)
   toQL (FilteredField f w) = prepText ["(", toQL f, toQL w, ")"]
   toQL (CompositeField f1 f2) = foldl1 (<>) [toQL f1, ".", toQL f2]
   toQL (FieldParam p) = toQL p
@@ -1139,6 +1140,7 @@ data DataType
   | NumberT
   | StringT
   | ObjectT
+  | UUIDT
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL DataType where
@@ -1163,6 +1165,7 @@ instance ToQL DataType where
     IntT -> "int"
     NumberT -> "number"
     ObjectT -> "object"
+    UUIDT -> "uuid"
 
 data FieldType
   = FieldType !(Maybe Flexible) !DataType

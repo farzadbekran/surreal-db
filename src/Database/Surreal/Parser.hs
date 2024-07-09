@@ -1163,6 +1163,7 @@ dataTypeTerm = label "dataType" $ lexeme $ choice $ map try
   , caseInsensitiveSymbol "int" $> IntT
   , caseInsensitiveSymbol "number" $> NumberT
   , caseInsensitiveSymbol "object" $> ObjectT
+  , caseInsensitiveSymbol "uuid" $> UUIDT
   ]
 
 fieldType :: Parser FieldType
