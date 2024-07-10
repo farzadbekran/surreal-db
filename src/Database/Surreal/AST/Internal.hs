@@ -868,13 +868,13 @@ instance ToQL Exp where
     AppE fn ps -> prepText $ [toQL fn <> "("] <> intersperse ", " (map toQL ps) <> [")"]
     LitE le -> toQL le
     ConstE i -> toQL i
-    IfThenE e te -> prepText [ "IF", "(", toQL e, ")"
-                             , "THEN", toQL te
-                             , "END"]
-    IfThenElseE e te fe -> prepText [ "IF", "(", toQL e, ")"
-                                    , "THEN", toQL te
+    IfThenE e te -> prepText [ "IF", toQL e
+                             , toQL te
+                             ]
+    IfThenElseE e te fe -> prepText [ "IF", toQL e
+                                    , toQL te
                                     , "ELSE", toQL fe
-                                    , "END"]
+                                    ]
     EdgeSelectorE mf es -> foldl1 (<>) $ maybe "" toQL mf : map toQL es
     SelectE mValue selectors mOmit from mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain ->
       prepText [ "SELECT"
