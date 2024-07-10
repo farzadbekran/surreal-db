@@ -891,8 +891,8 @@ exp = E.makeExprParser term operatorTable
 term :: Parser Exp
 term = sc
   >> lexeme (choice $ map try
-              [ ifThenE
-              , ifThenElseE
+              [ ifThenElseE
+              , ifThenE
               , selectE
               , liveSelectE
               , insertE
