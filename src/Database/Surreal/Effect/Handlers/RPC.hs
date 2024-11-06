@@ -107,8 +107,7 @@ connectRPC ConnectionInfo { .. } = catchAny
                  [toStrict $ decodeUtf8 $ J.encode
                    $ J.object [ "user" J..= user
                               , "pass" J..= pass
-                              , "ns" J..= ns
-                              , "db" J..= db]]
+                              ]]
     _ <- runReader connectionState $ sendRPC "use"
          [toStrict $ decodeUtf8 $ J.encode [ ns, db ]]
     return connectionState
