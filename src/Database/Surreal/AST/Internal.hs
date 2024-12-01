@@ -589,7 +589,7 @@ data ID
 instance ToQL ID where
   toQL = \case
     TextID t -> "`" <> t <> "`"
-    UUIDID t -> "u`" <> t <> "`"
+    UUIDID t -> "u'" <> t <> "'"
     NumID i -> tshow i
     ObjID o -> toQL o
     TupID es -> prepText $ ["["] <> intersperse "," (map toQL es) <> ["]"]
