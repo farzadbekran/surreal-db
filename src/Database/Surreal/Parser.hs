@@ -167,6 +167,13 @@ textID = label "TextID" $ lexeme $ do
        <|> pack <$> some alphaNumChar
   return $ TextID t
 
+uuidID :: Parser ID
+uuidID = label "UUIDID" $ lexeme $ do
+  _ <- symbol "u"
+  t <- pack <$> between (char '`') (char '`') (takeWhileP Nothing (/= '`'))
+       <|> pack <$> between (char '⟨') (char '⟩') (takeWhileP Nothing (/= '⟩'))
+  return $ UUIDID t
+
 numID :: Parser ID
 numID = label "numID" $ lexeme $ do
   i <- intParser
@@ -209,6 +216,7 @@ id_ :: Parser ID
 id_ = label "ID" $ choice $ map try
   [ randomID
   , numID
+  , uuidID
   , textID
   , objID
   , tupID

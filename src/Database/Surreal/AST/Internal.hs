@@ -578,6 +578,7 @@ instance ToQL RandFNName where
 
 data ID
   = TextID !Text
+  | UUIDID !Text
   | NumID !Int64
   | ObjID !Object
   | TupID ![Exp]
@@ -588,6 +589,7 @@ data ID
 instance ToQL ID where
   toQL = \case
     TextID t -> "`" <> t <> "`"
+    UUIDID t -> "u`" <> t <> "`"
     NumID i -> tshow i
     ObjID o -> toQL o
     TupID es -> prepText $ ["["] <> intersperse "," (map toQL es) <> ["]"]
