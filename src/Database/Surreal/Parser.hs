@@ -170,7 +170,8 @@ textID = label "TextID" $ lexeme $ do
 uuidID :: Parser ID
 uuidID = label "UUIDID" $ lexeme $ do
   _ <- symbol "u"
-  t <- pack <$> between (char '`') (char '`') (takeWhileP Nothing (/= '`'))
+  t <- pack <$> between (char '\'') (char '\'') (takeWhileP Nothing (/= '\''))
+       <|> pack <$> between (char '"') (char '"') (takeWhileP Nothing (/= '"'))
        <|> pack <$> between (char '⟨') (char '⟩') (takeWhileP Nothing (/= '⟩'))
   return $ UUIDID t
 
