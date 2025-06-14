@@ -846,9 +846,27 @@ showChangesE = label "showChangesE" $ lexeme $ do
   mLimit <- optional limit
   return $ ShowChangesE tn mSince mLimit
 
+expressionIndex :: Parser ExpressionIndex
+expressionIndex = label "expressionIndex" $ lexeme $
+  between (symbol "[") (symbol "]") $
+    choice $ map try
+      [ InclusiveRange <$> exp <* symbol "..=" <*> exp
+      , ExclusiveRange <$> exp <* symbol ".." <*> exp
+      , OpenStartIncl <$ symbol "..=" <*> exp
+      , OpenStartExcl <$ symbol ".." <*> exp
+      , OpenEnd <$> exp <* symbol ".."
+      , SingleIndex <$> exp
+      ]
+
+indexE :: Parser (Exp -> Exp)
+indexE = label "indexE" $ lexeme $ do
+  i <- expressionIndex
+  return (`IndexE` i)
+
 -- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
 operatorTable = [ [ E.Postfix typedExp
+                  , E.Postfix indexE
                   , E.InfixN (symbol "**" $> OPE (:**))
                   , E.InfixN (symbol "??" $> OPE (:??))
                   , E.InfixN (symbol "?:" $> OPE (:?:))

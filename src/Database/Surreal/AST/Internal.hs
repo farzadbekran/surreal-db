@@ -839,10 +839,38 @@ instance ToQL InfoParam where
     IPScope sn -> "SCOPE " <> toQL sn
     IPTable tn -> "TABLE " <> toQL tn
 
+data ExpressionIndex
+  = SingleIndex !Exp -- array[0]
+  | InclusiveRange !Exp !Exp -- array[0..=2]
+  | ExclusiveRange !Exp !Exp -- array[0..2]
+  | OpenStartIncl !Exp -- array[..=2]
+  | OpenStartExcl !Exp -- array[..2]
+  | OpenEnd !Exp -- array[1..]
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL ExpressionIndex where
+  toQL = \case
+    SingleIndex idx      -> "[" <> toQL idx <> "]"
+    InclusiveRange s e   -> "[" <> toQL s <> "..=" <> toQL e <> "]"
+    ExclusiveRange s e   -> "[" <> toQL s <> ".." <> toQL e <> "]"
+    OpenStartIncl e      -> "[..=" <> toQL e <> "]"
+    OpenStartExcl e      -> "[.." <> toQL e <> "]"
+    OpenEnd s            -> "[" <> toQL s <> "..]"
+
+instance HasInput ExpressionIndex where
+  getInputs = \case
+    SingleIndex idx      -> getInputs idx
+    InclusiveRange s e   -> getInputs s <> getInputs e
+    ExclusiveRange s e   -> getInputs s <> getInputs e
+    OpenStartIncl e      -> getInputs e
+    OpenStartExcl e      -> getInputs e
+    OpenEnd s            -> getInputs s
+
 data Exp
   = TypedE !Exp !TypeDef
   | OPE !Operator !Exp !Exp
   | AppE !FNName ![Exp]
+  | IndexE !Exp !ExpressionIndex
   | LitE !Literal
   | ConstE !Identifier
   | IfThenE !Exp !Exp
@@ -868,6 +896,7 @@ instance ToQL Exp where
     TypedE e _ -> toQL e
     OPE op e1 e2 -> prepText [toQL e1, toQL op, toQL e2]
     AppE fn ps -> prepText $ [toQL fn <> "("] <> intersperse ", " (map toQL ps) <> [")"]
+    IndexE e idx -> toQL e <> toQL idx
     LitE le -> toQL le
     ConstE i -> toQL i
     IfThenE e te -> prepText [ "IF", toQL e
@@ -965,6 +994,7 @@ instance HasInput Exp where
     TypedE e _ -> getInputs e
     OPE _ e1 e2 -> getInputs e1 <> getInputs e2
     AppE _ ps -> concatMap getInputs ps
+    IndexE e idx -> getInputs e <> getInputs idx
     LitE le -> getInputs le
     ConstE _ -> []
     IfThenE e te -> getInputs e <> getInputs te
