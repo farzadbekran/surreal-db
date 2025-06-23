@@ -14,6 +14,7 @@ import           Control.Monad.Fail             ( MonadFail (..) )
 import           Data.Char                      ( isAlphaNum )
 import           Data.Foldable                  ( foldl )
 import           Data.Time.ISO8601              ( parseISO8601 )
+import qualified Data.UUID                      as UUID
 import           Data.Void
 import           Database.Surreal.AST
 import           Text.Megaparsec
@@ -103,6 +104,14 @@ intParser = label "Int64" $ do
       Just r  -> return r
       Nothing -> fail "Invalid Int64"
 
+uuidParser :: Parser UUID.UUID
+uuidParser = label "UUID" $ do
+  _ <- symbol "u"
+  t <- between (char '\'') (char '\'') (takeWhileP Nothing (/= '\''))
+  case UUID.fromString t of
+    Just uuid -> return uuid
+    Nothing   -> fail "Invalid UUID"
+
 floatParser :: Parser Float
 floatParser = label "Float" $ do
   mNeg <- optional (symbol "-")
@@ -121,6 +130,7 @@ floatL = label "FloatL" $ lexeme $ FloatL <$> L.signed sc floatParser
 
 utcTimeParser :: Parser UTCTime
 utcTimeParser = label "utcTimeParser" $ lexeme $ do
+  _ <- symbol "d" -- starts with 'd'
   s <- unpack <$> quotedText
   let mUTC = parseISO8601 s
   case mUTC of
@@ -167,14 +177,6 @@ textID = label "TextID" $ lexeme $ do
        <|> pack <$> some alphaNumChar
   return $ TextID t
 
-uuidID :: Parser ID
-uuidID = label "UUIDID" $ lexeme $ do
-  _ <- symbol "u"
-  t <- pack <$> between (char '\'') (char '\'') (takeWhileP Nothing (/= '\''))
-       <|> pack <$> between (char '"') (char '"') (takeWhileP Nothing (/= '"'))
-       <|> pack <$> between (char '⟨') (char '⟩') (takeWhileP Nothing (/= '⟩'))
-  return $ UUIDID t
-
 numID :: Parser ID
 numID = label "numID" $ lexeme $ do
   i <- intParser
@@ -217,7 +219,7 @@ id_ :: Parser ID
 id_ = label "ID" $ choice $ map try
   [ randomID
   , numID
-  , uuidID
+  , UUIDID <$> uuidParser
   , textID
   , objID
   , tupID
@@ -302,6 +304,7 @@ literal = lexeme $ maybeBetweenParens $ choice $ map try
   [ noneL
   , nullL
   , boolL
+  , UUIDL <$> uuidParser
   , dateTimeL
   , durationL
   , floatL
@@ -1316,7 +1319,7 @@ throwS = label "ThrowS" $ lexeme $ do
 killParam :: Parser KillParam
 killParam = label "killParam" $ lexeme $ do
   choice $ map try
-    [ KPUUID <$> quotedText
+    [ KPUUID <$> uuidParser
     , KPParam <$> param
     ]
 

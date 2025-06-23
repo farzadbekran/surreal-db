@@ -14,6 +14,7 @@ import           Data.Char
 import           Data.Foldable     ( foldl1 )
 import qualified Data.Text         as T
 import           Data.Time.ISO8601 ( formatISO8601 )
+import           Data.UUID
 import           Data.Void
 import           Text.Megaparsec
 
@@ -578,7 +579,7 @@ instance ToQL RandFNName where
 
 data ID
   = TextID !Text
-  | UUIDID !Text
+  | UUIDID !UUID
   | NumID !Int64
   | ObjID !Object
   | TupID ![Exp]
@@ -589,7 +590,7 @@ data ID
 instance ToQL ID where
   toQL = \case
     TextID t -> "`" <> t <> "`"
-    UUIDID t -> "u'" <> t <> "'"
+    UUIDID t -> "u'" <> pack (toString t) <> "'"
     NumID i -> tshow i
     ObjID o -> toQL o
     TupID es -> prepText $ ["["] <> intersperse "," (map toQL es) <> ["]"]
@@ -628,6 +629,7 @@ data Literal
   | DateTimeL !UTCTime
   | DurationL !Duration
   | ObjectL !Object
+  | UUIDL !UUID
   | ArrayL ![Exp]
   | RecordIDL !RecordID
   | RecordIDRangeL !TableName !IDRange
@@ -663,6 +665,7 @@ instance ToQL Literal where
     ArrayL [] -> "[]"
     ArrayL es -> "[" <> foldl1 (<>) (intersperse "," (map toQL es)) <> "]"
     ObjectL o -> toQL o
+    UUIDL uuid -> "u'" <> pack (toString uuid) <> "'"
     RecordIDL i -> toQL i
     FutureL e -> "<future> {" <> toQL e <> "}"
     RegexL r -> "/" <> r <> "/"
@@ -1427,13 +1430,13 @@ instance ToQL Remove where
     RMParam p -> "PARAM " <> toQL p
 
 data KillParam
-  = KPUUID !Text
+  = KPUUID !UUID
   | KPParam !Param
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL KillParam where
   toQL = \case
-    KPUUID t -> "\"" <> t <> "\""
+    KPUUID t -> "u'" <> pack (toString t) <> "'"
     KPParam p -> toQL p
 
 instance HasInput KillParam where
