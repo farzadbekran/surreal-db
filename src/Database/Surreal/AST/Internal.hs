@@ -202,13 +202,13 @@ data USE
   deriving (Eq, Generic, Ord, Read, Show)
 
 data Param
-  = SQLParam !ParamName
-  | InputParam !ParamName !TypeDef
+  = SQLParam !Field
+  | InputParam !Field !TypeDef
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Param where
-  toQL (SQLParam t)     = "$" <> toQL t
-  toQL (InputParam t _) = "$" <> toQL t
+  toQL (SQLParam f)     = "$" <> toQL f
+  toQL (InputParam f _) = "$" <> toQL f
 
 instance HasInput Param where
   getInputs (SQLParam _) = []

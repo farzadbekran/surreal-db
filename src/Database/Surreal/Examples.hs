@@ -276,8 +276,10 @@ defineTest1 = do
             DEFINE INDEX my_index ON test FIELDS f1,f2 SEARCH ANALYZER my_analyzer BM25;
             DEFINE INDEX my_index ON test FIELDS f1,f2 SEARCH ANALYZER my_analyzer BM25(0.1,0.2);
             DEFINE FIELD permissions.* ON TABLE acl TYPE string;
+            let $user = (select * from users)[0];
+            (update users set name = "test" where name != $user.name) :: ();
             (SELECT field1.* from test) :: Value;
-            SELECT %p :: (Text) from test where $param.field[1] = 1;
+            SELECT %p :: (Text) from test where $param.field[1] == 1;
             (create test_table_2 set p.testField = /[A-Z]/) :: Value;
             |]
   query (#p .== "my val") q >>= print

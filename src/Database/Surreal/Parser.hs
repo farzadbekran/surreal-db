@@ -383,12 +383,12 @@ constE = label "ConstE" $ lexeme $ ConstE <$> identifier
 param :: Parser Param
 param = label "Param" $ lexeme $ choice
   [ do _ <- char '$'
-       SQLParam . ParamName <$> identifier
+       SQLParam <$> field
   , do
       _ <- char '%'
-      n <- ParamName <$> identifier
+      f <- field
       _ <- lexeme $ symbol "::"
-      InputParam n <$> parseType
+      InputParam f <$> parseType
   ]
 
 ifThenE :: Parser Exp
