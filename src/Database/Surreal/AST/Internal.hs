@@ -1123,6 +1123,56 @@ instance ToQL SchemaType where
     SCHEMAFULL -> "SCHEMAFULL"
     SCHEMALESS -> "SCHEMALESS"
 
+data TDefOpt = TDOptOwerwrite | TDOptIfNotExists
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL TDefOpt where
+  toQL = \case
+    TDOptOwerwrite -> "OWERWRITE"
+    TDOptIfNotExists -> "IF NOT EXISTS"
+
+data TTRelIn = TTRelIn | TTRelFrom
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL TTRelIn where
+  toQL = \case
+    TTRelIn -> "IN"
+    TTRelFrom -> "FROM"
+
+data TTRelOut = TTRelOut | TTRelTo
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL TTRelOut where
+  toQL = \case
+    TTRelOut -> "OUT"
+    TTRelTo -> "TO"
+
+data TTRelEnforced = TTRelEnforced
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL TTRelEnforced where
+  toQL _ = "ENFORCED"
+
+data TableType
+  = TTAny
+  | TTNormal
+  | TTRelation !(Maybe TTRelIn) !TableName !(Maybe TTRelOut) !TableName !(Maybe TTRelEnforced)
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL TableType where
+  toQL tt = "TYPE " <> case tt of
+    TTAny -> "ANY"
+    TTNormal -> "NORMAL"
+    TTRelation mRelIn tnIn mRelOut tnOut mEnforced ->
+      prepText
+      [ "RELATION"
+      , maybe "" toQL mRelIn
+      , toQL tnIn
+      , maybe "" toQL mRelOut
+      , toQL tnOut
+      , maybe "" toQL mEnforced
+      ]
+
 data TablePermissions
   = TPNONE
   | TPFULL
@@ -1284,7 +1334,7 @@ data Define
   | DefUser !UserName !UserScope !(Maybe UserPassword) !(Maybe [UserRole])
   | DefToken !TokenName !TokenScope !TokenType !TokenValue
   | DefScope !ScopeName !(Maybe Duration) !(Maybe SignUpExp) !(Maybe SignInExp)
-  | DefTable !TableName !(Maybe DROP) !(Maybe SchemaType) !(Maybe AsTableViewExp) !(Maybe Duration) !(Maybe TablePermissions)
+  | DefTable !(Maybe TDefOpt) !TableName !(Maybe DROP) !(Maybe SchemaType) !(Maybe TableType) !(Maybe AsTableViewExp) !(Maybe Duration) !(Maybe TablePermissions)
   | DefEvent !EventName !TableName !(Maybe WhenExp) !ThenExp
   | DefField !Field !TableName !(Maybe FieldType) !(Maybe DefaultExp) !(Maybe ValueExp) !(Maybe READONLY) !(Maybe AssertExp) !(Maybe TablePermissions)
   | DefAnalyzer !AnalyzerName !(Maybe [Tokenizer]) !(Maybe [Filter])
@@ -1327,12 +1377,14 @@ instance ToQL Define where
              Just signIn -> "SIGNIN " <> toQL signIn
              Nothing     -> ""
          ]
-    DefTable tn mDrop mSchema mExp mDur mPerms
+    DefTable mDefOpt tn mDrop mSchema mTType mExp mDur mPerms
       -> prepText
          [ "DEFINE TABLE"
+         , maybe "" toQL mDefOpt
          , toQL tn
          , toQL mDrop
          , toQL mSchema
+         , maybe "" toQL mTType
          , case mExp of
              Just e  -> "AS (" <> toQL e <> ")"
              Nothing -> ""

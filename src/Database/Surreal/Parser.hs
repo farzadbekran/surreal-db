@@ -33,7 +33,7 @@ lexeme = L.lexeme sc
 
 -- | Parse the exact String given
 symbol :: String -> Parser String
-symbol s = L.symbol sc s
+symbol = L.symbol sc
 
 -- | Match the string 's', accepting either lowercase or uppercase form of each character
 caseInsensitiveSymbol :: String -> Parser String
@@ -49,8 +49,8 @@ identifier :: Parser Identifier
 identifier = lexeme $ do
   s <- pack <$> takeWhile1P Nothing isValidIdentifierChar
   case mkIdentifier s of
-    Just i -> return i
-    _      -> fail $ "invalid identifier: " <> unpack s
+    Just i  -> return i
+    Nothing -> fail $ "invalid identifier: " <> unpack s
 
 -- | Type Parsers
 
@@ -1096,19 +1096,50 @@ tablePermissions = label "tablePermissions" $ lexeme $ do
     , tablePermissionsFor
     ]
 
+ttRelation :: Parser TableType
+ttRelation = label "ttRelation" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "RELATION"
+  mRelIn <- optional
+    $ (caseInsensitiveSymbol "IN" $> TTRelIn)
+    <|> (caseInsensitiveSymbol "FROM" $> TTRelFrom)
+  tnIn <- tableName
+  mRelOut <- optional
+    $ (caseInsensitiveSymbol "OUT" $> TTRelOut)
+    <|> (caseInsensitiveSymbol "TO" $> TTRelTo)
+  tnOut <- tableName
+  TTRelation mRelIn tnIn mRelOut tnOut
+    <$> optional (caseInsensitiveSymbol "ENFORCED" $> TTRelEnforced)
+
+tableType :: Parser TableType
+tableType = label "tableType" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "TYPE"
+  choice
+    [ caseInsensitiveSymbol "ANY" $> TTAny
+    , caseInsensitiveSymbol "NORMAL" $> TTNormal
+    , ttRelation
+    ]
+
 defTable :: Parser Define
 defTable = label "defTable" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "TABLE"
+  mDefOpt <- optional
+    $ (caseInsensitiveSymbol "OWERWRITE" $> TDOptOwerwrite)
+    <|> (do
+            _ <- caseInsensitiveSymbol "IF"
+            _ <- caseInsensitiveSymbol "NOT"
+            _ <- caseInsensitiveSymbol "EXISTS"
+            pure TDOptOwerwrite)
   tn <- tableName
   mDrop <- optional $ caseInsensitiveSymbol "DROP" $> DROP
   st <- optional $ choice $ map try
     [ caseInsensitiveSymbol "SCHEMAFULL" $> SCHEMAFULL
     , caseInsensitiveSymbol "SCHEMALESS" $> SCHEMALESS
     ]
+  mTType <- optional tableType
   as <- optional $ caseInsensitiveSymbol "AS" >> maybeBetweenParens selectE
   dur <- optional $ caseInsensitiveSymbol "CHANGEFEED" >> durationParser
-  DefTable tn mDrop st as dur <$> optional tablePermissions
+  DefTable mDefOpt tn mDrop st mTType as dur <$> optional tablePermissions
 
 defEvent :: Parser Define
 defEvent = label "defEvent" $ lexeme $ do
@@ -1339,18 +1370,18 @@ removeParam = label "removeParam" $ lexeme $ do
   choice $ map try
     [ caseInsensitiveSymbol "NAMESPACE" >> (Namespace <$> identifier) <&> RMNS
     , caseInsensitiveSymbol "DATABASE" >> (Database <$> identifier) <&> RMDB
-    , caseInsensitiveSymbol "USER" >> RMUser <$> (UserName <$> identifier) <*> (caseInsensitiveSymbol "ON" >> userScope)
-    , caseInsensitiveSymbol "LOGIN" >> RMLogin <$> (LoginName <$> identifier) <*> (caseInsensitiveSymbol "ON" >> nsdbScope)
-    , caseInsensitiveSymbol "TOKEN" >> RMToken <$> (TokenName <$> identifier) <*> (caseInsensitiveSymbol "ON" >> nsdbScope)
-    , caseInsensitiveSymbol "SCOPE" >> RMScope <$> (ScopeName <$> identifier)
+    , caseInsensitiveSymbol "USER" >> (RMUser . UserName <$> identifier) <*> (caseInsensitiveSymbol "ON" >> userScope)
+    , caseInsensitiveSymbol "LOGIN" >> (RMLogin . LoginName <$> identifier) <*> (caseInsensitiveSymbol "ON" >> nsdbScope)
+    , caseInsensitiveSymbol "TOKEN" >> (RMToken . TokenName <$> identifier) <*> (caseInsensitiveSymbol "ON" >> nsdbScope)
+    , caseInsensitiveSymbol "SCOPE" >> (RMScope . ScopeName <$> identifier)
     , caseInsensitiveSymbol "TABLE" >> RMTable <$> tableName
-    , caseInsensitiveSymbol "EVENT" >> RMEvent <$> (EventName <$> identifier)
+    , caseInsensitiveSymbol "EVENT" >> (RMEvent . EventName <$> identifier)
       <*> (do
               _ <- caseInsensitiveSymbol "ON"
               _ <- optional $ caseInsensitiveSymbol "TABLE"
               tableName)
     , caseInsensitiveSymbol "FUNCTION" >> RMFN <$> fnName
-    , caseInsensitiveSymbol "FIELD" >> RMField <$> (FieldName <$> identifier)
+    , caseInsensitiveSymbol "FIELD" >> (RMField . FieldName <$> identifier)
       <*> (do
               _ <- caseInsensitiveSymbol "ON"
               _ <- optional $ caseInsensitiveSymbol "TABLE"
@@ -1400,13 +1431,13 @@ statement =
 expLine :: Parser SurQLLine
 expLine = lexeme $ do
   l <- ExpLine <$> exp
-  _ <- (void $ symbol ";") <|> (void $ lookAhead (symbol "}")) <|> lookAhead eof
+  _ <- void (symbol ";") <|> void (lookAhead (symbol "}")) <|> lookAhead eof
   return l
 
 statementLine :: Parser SurQLLine
 statementLine = lexeme $ do
   l <- StatementLine <$> statement
-  _ <- (void $ symbol ";") <|> (void $ lookAhead (symbol "}")) <|> lookAhead eof
+  _ <- void (symbol ";") <|> void (lookAhead (symbol "}")) <|> lookAhead eof
   return l
 
 surQLLine :: Parser SurQLLine
