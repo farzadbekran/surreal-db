@@ -326,43 +326,27 @@ wildCardField = label "wildCardField" $ lexeme $ symbol "*" $> WildCardField
 simpleField :: Parser Field
 simpleField = label "SimpleField" $ lexeme $ SimpleField . FieldName <$> identifier
 
-indexedField :: Parser (Field -> Field)
-indexedField = label "IndexedField" $ lexeme $ do
-  is <- many $ between (char '[') (char ']') literal
-  if null is
-    then
-    fail "Empty index!"
-    else
-    return (`IndexedField` is)
-
-filteredField :: Parser Field
-filteredField = label "FilteredField" $ lexeme $ betweenParens $ do
-  f <- field
-  FilteredField f <$> where_
-
-fieldOperatorTable :: [[E.Operator Parser Field]]
-fieldOperatorTable = [ [ E.Postfix indexedField
-                       , E.InfixL (symbol "." $> CompositeField)
-                       ] ]
-
 fieldParam :: Parser Field
-fieldParam = label "fieldParam" $ FieldParam <$> param
+fieldParam = FieldParam <$> param
+
+fieldWithPostFix :: Parser Field
+fieldWithPostFix = label "SimpleField" $ lexeme $ do
+  f <- choice [simpleField, fieldParam]
+  e <- choice [indexE, filterE, accessorE]
+  return $ FieldWithPostFix f (e $ LitE $ FieldL f)
 
 field :: Parser Field
-field = E.makeExprParser fieldTerm fieldOperatorTable
-
-fieldTerm :: Parser Field
-fieldTerm = lexeme $ choice $ map try
-  [ fieldParam
-  , filteredField
+field = label "field" $ lexeme $ choice $ map try
+  [ wildCardField
+  , fieldWithPostFix
+  , fieldParam
   , simpleField
-  , wildCardField
   ]
 
 fnName :: Parser FNName
 fnName = label "FNName" $ lexeme $ do
   parts <- sepBy identifier (symbol "::")
-  if null parts
+  if length parts < 2
     then fail "Invalid function name."
     else
       return $ FNName parts
@@ -476,6 +460,7 @@ selector = E.makeExprParser selectorTerm selectorOperatorTable
 selectorTerm :: Parser Selector
 selectorTerm = lexeme $ choice $ map try
   [ fieldSelector
+  , betweenParens fieldSelector
   , expSelector
   , edgeSelector
   ]
@@ -768,11 +753,13 @@ updateE = label "updateE" $ lexeme $ do
 
 relateTarget :: Parser RelateTarget
 relateTarget = label "RelateTarget" $ lexeme $ do
-  rid1 <- recordID
-  _ <- symbol "->"
-  tn <- tableName
-  _ <- symbol "->"
-  RelateTarget rid1 tn <$> recordID
+  e <- exp
+  case e of
+    OPE (:->) (OPE (:->) _ _) _ -> return $ RelateTarget e
+    OPE (:->) (OPE (:<-) _ _) _ -> return $ RelateTarget e
+    OPE (:<-) (OPE (:->) _ _) _ -> return $ RelateTarget e
+    OPE (:<-) (OPE (:<-) _ _) _ -> return $ RelateTarget e
+    _otherwise                  -> fail "invalid relate target!"
 
 relateE :: Parser Exp
 relateE = label "relateE" $ lexeme $ do
@@ -866,10 +853,26 @@ indexE = label "indexE" $ lexeme $ do
   i <- expressionIndex
   return (`IndexE` i)
 
+filterE :: Parser (Exp -> Exp)
+filterE = label "filterE" $ lexeme $
+  between (symbol "(") (symbol ")") $ do
+    we <- ExpressionFilter . WhereE <$> where_
+    return (`FilterE` we)
+
+accessorE :: Parser (Exp -> Exp)
+accessorE = label "accessorE" $ lexeme $ do
+  _ <- symbol "."
+  f <- field
+  return (`AccessorE` (LitE $ FieldL f))
+
 -- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
 operatorTable = [ [ E.Postfix typedExp
                   , E.Postfix indexE
+                  , E.Postfix filterE
+                  , E.InfixL (symbol "." $> AccessorE)
+                  , E.InfixL (symbol "->" $> OPE (:->))
+                  , E.InfixL (symbol "<-" $> OPE (:<-))
                   , E.InfixN (symbol "**" $> OPE (:**))
                   , E.InfixN (symbol "??" $> OPE (:??))
                   , E.InfixN (symbol "?:" $> OPE (:?:))
@@ -920,26 +923,27 @@ exp = E.makeExprParser term operatorTable
 
 term :: Parser Exp
 term = sc
-  >> lexeme (choice $ map try
-              [ ifThenElseE
-              , ifThenE
-              , selectE
-              , liveSelectE
-              , insertE
-              , createE
-              , updateE
-              , relateE
-              , deleteE
-              , returnE
-              , infoE
-              , WhereE <$> where_
-              , showChangesE
-              , appE
-              , edgeSelectorE
+  >> lexeme (choice $
+             [ try ifThenElseE
+             , ifThenE
+             , selectE
+             , liveSelectE
+             , insertE
+             , createE
+             , updateE
+             , relateE
+             , deleteE
+             , returnE
+             , infoE
+             , WhereE <$> where_
+             , showChangesE
+             ] <> map try
+              [ appE
               , litE
               , InParenE <$> betweenParens exp
               , BlockE <$> between (lexeme $ char '{') (lexeme $ char '}') block
               , constE
+              , edgeSelectorE
               ])
 
 useNSDB :: Parser Statement

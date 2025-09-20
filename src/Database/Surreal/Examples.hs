@@ -218,7 +218,7 @@ updateTest2 = do
 
 selectTest1 :: Eff AppEffs ()
 selectTest1 = do
-  let q = [sql| (SELECT * FROM person WHERE ->knows->person->(knows WHERE influencer = %v1 :: Bool) TIMEOUT 5s) :: Value; |]
+  let q = [sql| (SELECT * FROM person WHERE ->knows->person->knows(WHERE influencer = %v1 :: Bool) TIMEOUT 5s) :: Value; |]
   query (#v1 .== True) q >>= print
 
 relateTest1 :: Eff AppEffs ()
@@ -278,11 +278,13 @@ defineTest1 = do
             DEFINE FIELD permissions.* ON TABLE acl TYPE string;
             let $user = (select * from users)[0];
             (update users set name = "test" where name != $user.name) :: ();
+            (RELATE $inputUserId.id->owns_file->(%p2 :: (Text))) :: ();
+            (RELATE $inputUserId.id->owns_file(where a == b)->test.field1) :: ();
             (SELECT field1.* from test) :: Value;
-            SELECT %p :: (Text) from test where $param.field[1] == 1;
+            (SELECT %p :: (Text) from test where $param.field[1] == 1) :: Value;
             (create test_table_2 set p.testField = /[A-Z]/) :: Value;
             |]
-  query (#p .== "my val") q >>= print
+  query (#p .== ("my val" :: Text) .+ #p2 .== ("my val 2" :: Text)) q >>= print
 
 inputTest :: Eff AppEffs ()
 inputTest = do

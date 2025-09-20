@@ -23,15 +23,10 @@ getFieldLabel :: MonadFail m => Field -> m Text
 getFieldLabel = \case
   WildCardField -> fail "Can't determine field label for WildCardField '*'!"
   SimpleField t -> return $ toQL t
-  IndexedField f _ -> getFieldLabel f
-  FilteredField f _ -> getFieldLabel f
+  FieldWithPostFix f _ -> getFieldLabel f
   FieldParam p -> case p of
     SQLParam t     -> return $ toQL t
     InputParam t _ -> return $ toQL t
-  CompositeField f1 f2 -> do
-    l1 <- getFieldLabel f1
-    l2 <- getFieldLabel f2
-    return $ l1 <> l2
 
 getEdgeLabel :: MonadFail m => Edge -> m Text
 getEdgeLabel = \case
@@ -114,6 +109,7 @@ getBaseType = \case
   ie@(InsertE {}) -> fail $ "getBaseType: Insert Expressions must have a type: " <> show ie
   (LiveSelectE {}) -> return [(Nothing, T "Text" [])]
   ShowChangesE {} -> return [(Nothing, T "Value" [])]
+  InParenE e -> getBaseType e
   a -> fail $ "getBaseType: undefined: " <> show a
 
 -- | converts `TypeDef` to TH type definition AST
