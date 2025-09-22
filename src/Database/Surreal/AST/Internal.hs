@@ -1145,21 +1145,25 @@ instance ToQL TDefOpt where
     TDOptOwerwrite -> "OWERWRITE"
     TDOptIfNotExists -> "IF NOT EXISTS"
 
-data TTRelIn = TTRelIn | TTRelFrom
+data TTRelIn
+  = TTRelIn ![TableName]
+  | TTRelFrom ![TableName]
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL TTRelIn where
   toQL = \case
-    TTRelIn -> "IN"
-    TTRelFrom -> "FROM"
+    TTRelIn tns -> prepText $ "IN" : intersperse "|" (map toQL tns)
+    TTRelFrom tns -> prepText $ "FROM" : intersperse "|" (map toQL tns)
 
-data TTRelOut = TTRelOut | TTRelTo
+data TTRelOut
+  = TTRelOut ![TableName]
+  | TTRelTo ![TableName]
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL TTRelOut where
   toQL = \case
-    TTRelOut -> "OUT"
-    TTRelTo -> "TO"
+    TTRelOut tns -> prepText $ "OUT" : intersperse "|" (map toQL tns)
+    TTRelTo tns -> prepText $ "TO" : intersperse "|" (map toQL tns)
 
 data TTRelEnforced = TTRelEnforced
   deriving (Eq, Generic, Ord, Read, Show)
@@ -1170,20 +1174,18 @@ instance ToQL TTRelEnforced where
 data TableType
   = TTAny
   | TTNormal
-  | TTRelation !(Maybe TTRelIn) !TableName !(Maybe TTRelOut) !TableName !(Maybe TTRelEnforced)
+  | TTRelation !(Maybe TTRelIn) !(Maybe TTRelOut) !(Maybe TTRelEnforced)
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL TableType where
   toQL tt = "TYPE " <> case tt of
     TTAny -> "ANY"
     TTNormal -> "NORMAL"
-    TTRelation mRelIn tnIn mRelOut tnOut mEnforced ->
+    TTRelation mRelIn mRelOut mEnforced ->
       prepText
       [ "RELATION"
       , maybe "" toQL mRelIn
-      , toQL tnIn
       , maybe "" toQL mRelOut
-      , toQL tnOut
       , maybe "" toQL mEnforced
       ]
 

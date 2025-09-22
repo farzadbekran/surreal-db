@@ -1100,18 +1100,30 @@ tablePermissions = label "tablePermissions" $ lexeme $ do
     , tablePermissionsFor
     ]
 
+ttRelIn :: Parser TTRelIn
+ttRelIn = label "ttRelIn" $ lexeme $ do
+  p <- caseInsensitiveSymbol "IN" <|> caseInsensitiveSymbol "FROM"
+  tns <- sepBy tableName (lexeme $ symbol "|")
+  case toLower p of
+    "in"   -> return $ TTRelIn tns
+    "from" -> return $ TTRelFrom tns
+    _      -> fail $ "invalid TTRelIn keyword: " <> p
+
+ttRelOut :: Parser TTRelOut
+ttRelOut = label "ttRelIn" $ lexeme $ do
+  p <- caseInsensitiveSymbol "TO" <|> caseInsensitiveSymbol "OUT"
+  tns <- sepBy tableName (lexeme $ symbol "|")
+  case toLower p of
+    "to"  -> return $ TTRelTo tns
+    "out" -> return $ TTRelOut tns
+    _     -> fail $ "invalid TTRelOut keyword: " <> p
+
 ttRelation :: Parser TableType
 ttRelation = label "ttRelation" $ lexeme $ do
   _ <- caseInsensitiveSymbol "RELATION"
-  mRelIn <- optional
-    $ (caseInsensitiveSymbol "IN" $> TTRelIn)
-    <|> (caseInsensitiveSymbol "FROM" $> TTRelFrom)
-  tnIn <- tableName
-  mRelOut <- optional
-    $ (caseInsensitiveSymbol "OUT" $> TTRelOut)
-    <|> (caseInsensitiveSymbol "TO" $> TTRelTo)
-  tnOut <- tableName
-  TTRelation mRelIn tnIn mRelOut tnOut
+  mRelIn <- optional ttRelIn
+  mRelOut <- optional ttRelOut
+  TTRelation mRelIn mRelOut
     <$> optional (caseInsensitiveSymbol "ENFORCED" $> TTRelEnforced)
 
 tableType :: Parser TableType
