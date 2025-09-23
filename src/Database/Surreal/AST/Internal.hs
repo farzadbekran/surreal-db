@@ -184,7 +184,6 @@ type Max = Int64
 type K1 = Float
 type B = Float
 
-type DefaultExp = Exp
 type ValueExp = Exp
 type AssertExp = Exp
 type SignUpExp = Exp
@@ -192,6 +191,15 @@ type SignInExp = Exp
 type AsTableViewExp = Exp
 type WhenExp = Exp
 type ThenExp = Exp
+
+data DefaultExp
+  = DefaultExp !Exp
+  | DefaultAlwaysExp !Exp
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL DefaultExp where
+  toQL (DefaultExp e)       = "DEFAULT" <> toQL e
+  toQL (DefaultAlwaysExp e) = "DEFAULT ALWAYS" <> toQL e
 
 data TypeDef
   = T !String ![TypeDef]
@@ -266,7 +274,7 @@ instance ToQL Selector where
     SelectorAs s fAs ->
       prepText [ toQL s, "AS", toQL fAs ]
     EdgeSelector mf es f ->
-      foldl1 (<>) $ maybe "" toQL mf : map toQL es <> [" AS ", toQL f]
+      foldl1 (<>) $ toQL mf : map toQL es <> [" AS ", toQL f]
     TypedSelector s _ -> toQL s
 
 instance HasInput Selector where
@@ -921,7 +929,7 @@ instance ToQL Exp where
                                     , toQL te
                                     , "ELSE", toQL fe
                                     ]
-    EdgeSelectorE mf es -> foldl1 (<>) $ maybe "" toQL mf : map toQL es
+    EdgeSelectorE mf es -> foldl1 (<>) $ toQL mf : map toQL es
     SelectE mValue selectors mOmit from mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain ->
       prepText [ "SELECT"
                , toQL mValue
@@ -1137,14 +1145,6 @@ instance ToQL SchemaType where
     SCHEMAFULL -> "SCHEMAFULL"
     SCHEMALESS -> "SCHEMALESS"
 
-data TDefOpt = TDOptOwerwrite | TDOptIfNotExists
-  deriving (Eq, Generic, Ord, Read, Show)
-
-instance ToQL TDefOpt where
-  toQL = \case
-    TDOptOwerwrite -> "OWERWRITE"
-    TDOptIfNotExists -> "IF NOT EXISTS"
-
 data TTRelIn
   = TTRelIn ![TableName]
   | TTRelFrom ![TableName]
@@ -1184,9 +1184,9 @@ instance ToQL TableType where
     TTRelation mRelIn mRelOut mEnforced ->
       prepText
       [ "RELATION"
-      , maybe "" toQL mRelIn
-      , maybe "" toQL mRelOut
-      , maybe "" toQL mEnforced
+      , toQL mRelIn
+      , toQL mRelOut
+      , toQL mEnforced
       ]
 
 data TablePermissions
@@ -1344,15 +1344,68 @@ data READONLY = READONLY
 instance ToQL READONLY where
   toQL _ = "READONLY"
 
+data DefType = Overwrite | IfNotExists
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL DefType where
+  toQL Overwrite   = "OVERWRITE"
+  toQL IfNotExists = "IF NOT EXISTS"
+
+data FieldDefOnDel
+  = OnDelReject
+  | OnDelCascade
+  | OnDelIgnore
+  | OnDelUnset
+  | OnDelThen !Exp
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL FieldDefOnDel where
+  toQL OnDelReject   = "ON DELETE REJECT"
+  toQL OnDelCascade  = "ON DELETE CASCADE"
+  toQL OnDelIgnore   = "ON DELETE IGNORE"
+  toQL OnDelUnset    = "ON DELETE UNSET"
+  toQL (OnDelThen e) = "ON DELETE THEN " <> toQL e
+
+newtype FieldDefRef
+  = FieldDefRef (Maybe FieldDefOnDel)
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL FieldDefRef where
+  toQL (FieldDefRef mOnDel) = "REFERENCE " <> toQL mOnDel
+
+newtype ComputedExp
+  = ComputedExp Exp
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL ComputedExp where
+  toQL (ComputedExp e) = "COMPUTED " <> toQL e
+
+newtype CommentStr
+  = CommentStr Text
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL CommentStr where
+  toQL (CommentStr s) = "COMMENT \"" <> s <> "\""
+
+data ChangeFeed
+  = ChangeFeed !Duration
+  | ChangeFeedIncludeOriginal !Duration
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL ChangeFeed where
+  toQL (ChangeFeed d) = "CHANGEFEED " <> toQL d
+  toQL (ChangeFeedIncludeOriginal d) = "CHANGEFEED " <> toQL d <> " INCLUDE ORIGINAL"
+
 data Define
   = DefNamespace !Namespace
   | DefDatabase !Database
   | DefUser !UserName !UserScope !(Maybe UserPassword) !(Maybe [UserRole])
   | DefToken !TokenName !TokenScope !TokenType !TokenValue
   | DefScope !ScopeName !(Maybe Duration) !(Maybe SignUpExp) !(Maybe SignInExp)
-  | DefTable !(Maybe TDefOpt) !TableName !(Maybe DROP) !(Maybe SchemaType) !(Maybe TableType) !(Maybe AsTableViewExp) !(Maybe Duration) !(Maybe TablePermissions)
+  | DefTable !(Maybe DefType) !TableName !(Maybe DROP) !(Maybe SchemaType) !(Maybe TableType) !(Maybe AsTableViewExp) !(Maybe ChangeFeed) !(Maybe TablePermissions) !(Maybe CommentStr)
   | DefEvent !EventName !TableName !(Maybe WhenExp) !ThenExp
-  | DefField !Field !TableName !(Maybe FieldType) !(Maybe DefaultExp) !(Maybe ValueExp) !(Maybe READONLY) !(Maybe AssertExp) !(Maybe TablePermissions)
+  | DefField !(Maybe DefType) !Field !TableName !(Maybe FieldType) !(Maybe FieldDefRef) !(Maybe DefaultExp) !(Maybe ValueExp) !(Maybe READONLY) !(Maybe AssertExp) !(Maybe TablePermissions) !(Maybe CommentStr)
+  | DefComputedField !(Maybe DefType) !Field !TableName !ComputedExp !(Maybe FieldType) !(Maybe TablePermissions) !(Maybe CommentStr)
   | DefAnalyzer !AnalyzerName !(Maybe [Tokenizer]) !(Maybe [Filter])
   | DefIndex !IndexName !TableName ![Field] !(Maybe (Either UNIQUE SearchAnalyzer))
   deriving (Eq, Generic, Ord, Read, Show)
@@ -1393,21 +1446,20 @@ instance ToQL Define where
              Just signIn -> "SIGNIN " <> toQL signIn
              Nothing     -> ""
          ]
-    DefTable mDefOpt tn mDrop mSchema mTType mExp mDur mPerms
+    DefTable mDefOpt tn mDrop mSchema mTType mExp mChangeFeed mPerms mComment
       -> prepText
          [ "DEFINE TABLE"
-         , maybe "" toQL mDefOpt
+         , toQL mDefOpt
          , toQL tn
          , toQL mDrop
          , toQL mSchema
-         , maybe "" toQL mTType
+         , toQL mTType
          , case mExp of
              Just e  -> "AS (" <> toQL e <> ")"
              Nothing -> ""
-         , case mDur of
-             Just dur -> "CHANGEFEED " <> toQL dur
-             Nothing  -> ""
+         , toQL mChangeFeed
          , toQL mPerms
+         , toQL mComment
          ]
     DefEvent en tn mWhen thenE
       -> prepText
@@ -1421,13 +1473,15 @@ instance ToQL Define where
          , "THEN"
          , toQL thenE
          ]
-    DefField f tn mFieldType mDefExp mValExp mReadOnly mAssertExp mPermissions
+    DefField mDefType f tn mFieldType mRef mDefExp mValExp mReadOnly mAssertExp mPermissions mComment
       -> prepText
          [ "DEFINE FIELD"
+         , toQL mDefType
          , toQL f
          , "ON TABLE"
          , toQL tn
          , toQL mFieldType
+         , toQL mRef
          , case mDefExp of
              Just e  -> "DEFAULT " <> toQL e
              Nothing -> ""
@@ -1441,6 +1495,19 @@ instance ToQL Define where
              Just e  -> "ASSERT " <> toQL e
              Nothing -> ""
          , toQL mPermissions
+         , toQL mComment
+         ]
+    DefComputedField mDefType f tn computed mFieldType mPermissions mComment
+      -> prepText
+         [ "DEFINE FIELD"
+         , toQL mDefType
+         , toQL f
+         , "ON TABLE"
+         , toQL tn
+         , toQL computed
+         , toQL mFieldType
+         , toQL mPermissions
+         , toQL mComment
          ]
     DefAnalyzer an mTokenizers mFilters
       -> prepText

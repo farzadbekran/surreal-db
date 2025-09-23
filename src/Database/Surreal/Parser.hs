@@ -134,8 +134,8 @@ utcTimeParser = label "utcTimeParser" $ lexeme $ do
   s <- unpack <$> quotedText
   let mUTC = parseISO8601 s
   case mUTC of
-    Just utc -> return utc
-    _        -> fail "Invalid ISO8601 DateTime"
+    Just utc   -> return utc
+    _otherwise -> fail "Invalid ISO8601 DateTime"
 
 dateTimeL :: Parser Literal
 dateTimeL = label "dateTimeL" $ lexeme $ DateTimeL <$> utcTimeParser
@@ -1135,17 +1135,27 @@ tableType = label "tableType" $ lexeme $ do
     , ttRelation
     ]
 
+changeFeed :: Parser ChangeFeed
+changeFeed = label "changeFeed" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "CHANGEFEED"
+  d <- durationParser
+  mIncludeOriginal <- optional
+    (caseInsensitiveSymbol "INCLUDE" >> caseInsensitiveSymbol "ORIGINAL")
+  case mIncludeOriginal of
+    Just _  -> return $ ChangeFeedIncludeOriginal d
+    Nothing -> return $ ChangeFeed d
+
 defTable :: Parser Define
 defTable = label "defTable" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "TABLE"
   mDefOpt <- optional
-    $ (caseInsensitiveSymbol "OWERWRITE" $> TDOptOwerwrite)
+    $ (caseInsensitiveSymbol "OWERWRITE" $> Overwrite)
     <|> (do
             _ <- caseInsensitiveSymbol "IF"
             _ <- caseInsensitiveSymbol "NOT"
             _ <- caseInsensitiveSymbol "EXISTS"
-            pure TDOptOwerwrite)
+            pure IfNotExists)
   tn <- tableName
   mDrop <- optional $ caseInsensitiveSymbol "DROP" $> DROP
   st <- optional $ choice $ map try
@@ -1154,8 +1164,10 @@ defTable = label "defTable" $ lexeme $ do
     ]
   mTType <- optional tableType
   as <- optional $ caseInsensitiveSymbol "AS" >> maybeBetweenParens selectE
-  dur <- optional $ caseInsensitiveSymbol "CHANGEFEED" >> durationParser
-  DefTable mDefOpt tn mDrop st mTType as dur <$> optional tablePermissions
+  mChangeFeed <- optional changeFeed
+  mTP <- optional tablePermissions
+  DefTable mDefOpt tn mDrop st mTType as mChangeFeed mTP
+    <$> optional (caseInsensitiveSymbol "COMMENT" >> CommentStr <$> quotedText)
 
 defEvent :: Parser Define
 defEvent = label "defEvent" $ lexeme $ do
@@ -1192,8 +1204,8 @@ setT = label "setT" $ lexeme $ do
 recordT :: Parser DataType
 recordT = label "recordT" $ lexeme $ do
   _ <- caseInsensitiveSymbol "record"
-  tns <- (between (char '<') (char '>') (sepBy tableName (lexeme $ char '|')) <|>
-          betweenParens (sepBy tableName (lexeme $ char '|')))
+  tns <- between (char '<') (char '>') (sepBy tableName (lexeme $ char '|')) <|>
+          betweenParens (sepBy tableName (lexeme $ char '|'))
   return $ RecordT tns
 
 geometryType :: Parser GeometryType
@@ -1211,8 +1223,8 @@ geometryType = label "geometryType" $ lexeme $ choice $ map try
 geometryT :: Parser DataType
 geometryT = label "geometryT" $ lexeme $ do
   _ <- caseInsensitiveSymbol "geometry"
-  gts <- (between (char '<') (char '>') (sepBy geometryType (lexeme $ char '|')) <|>
-          betweenParens (sepBy geometryType (lexeme $ char '|')))
+  gts <- between (char '<') (char '>') (sepBy geometryType (lexeme $ char '|')) <|>
+          betweenParens (sepBy geometryType (lexeme $ char '|'))
   return $ GeometryT gts
 
 -- order matters here, more specific first, ie ** before *
@@ -1249,21 +1261,78 @@ fieldType = label "fieldType" $ lexeme $ do
   _ <- caseInsensitiveSymbol "TYPE"
   FieldType flex <$> dataType
 
+fieldDefOnDel :: Parser FieldDefOnDel
+fieldDefOnDel = label "fieldDefOnDel" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "ON"
+  _ <- caseInsensitiveSymbol "DELETE"
+  (caseInsensitiveSymbol "REJECT" $> OnDelReject)
+    <|> (caseInsensitiveSymbol "CASCADE" $> OnDelCascade)
+    <|> (caseInsensitiveSymbol "IGNORE" $> OnDelIgnore)
+    <|> (caseInsensitiveSymbol "UNSET" $> OnDelUnset)
+    <|> (do
+            _ <- caseInsensitiveSymbol "THEN"
+            OnDelThen <$> exp)
+
+fieldDefRef :: Parser FieldDefRef
+fieldDefRef = label "fieldDefRef" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "REFERENCE"
+  FieldDefRef <$> optional fieldDefOnDel
+
+defaultExp :: Parser DefaultExp
+defaultExp = label "defaultExp" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFAULT"
+  mAlways <- optional $ caseInsensitiveSymbol "ALWAYS"
+  case mAlways of
+    Just _  -> DefaultAlwaysExp <$> exp
+    Nothing -> DefaultExp <$> exp
+
 defField :: Parser Define
 defField = label "defField" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "FIELD"
+  mDefOpt <- optional
+    $ (caseInsensitiveSymbol "OVERWRITE" $> Overwrite)
+    <|> (do
+            _ <- caseInsensitiveSymbol "IF"
+            _ <- caseInsensitiveSymbol "NOT"
+            _ <- caseInsensitiveSymbol "EXISTS"
+            pure IfNotExists)
   f <- field
   _ <- caseInsensitiveSymbol "ON"
   _ <- optional $ caseInsensitiveSymbol "TABLE"
   tn <- tableName
   ft <- optional fieldType
-  defaultE <- optional $ caseInsensitiveSymbol "DEFAULT" >> exp
+  mRef <- optional fieldDefRef
+  defaultE <- optional defaultExp
   valE <- optional $ caseInsensitiveSymbol "VALUE" >> exp
   readOnly <- optional $ caseInsensitiveSymbol "READONLY" $> READONLY
   assertE <- optional $ caseInsensitiveSymbol "ASSERT" >> exp
   tp <- optional tablePermissions
-  return $ DefField f tn ft defaultE valE readOnly assertE tp
+  DefField mDefOpt f tn ft mRef defaultE valE readOnly assertE tp
+    <$> optional (caseInsensitiveSymbol "COMMENT" >> CommentStr <$> quotedText)
+
+defComputedField :: Parser Define
+defComputedField = label "defComputedField" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFINE"
+  _ <- caseInsensitiveSymbol "FIELD"
+  mDefOpt <- optional
+    $ (caseInsensitiveSymbol "OVERWRITE" $> Overwrite)
+    <|> (do
+            _ <- caseInsensitiveSymbol "IF"
+            _ <- caseInsensitiveSymbol "NOT"
+            _ <- caseInsensitiveSymbol "EXISTS"
+            pure IfNotExists)
+  f <- field
+  _ <- caseInsensitiveSymbol "ON"
+  _ <- optional $ caseInsensitiveSymbol "TABLE"
+  tn <- tableName
+  computedExp <- (do
+                     _ <- caseInsensitiveSymbol "COMPUTED"
+                     ComputedExp <$> exp)
+  ft <- optional fieldType
+  tp <- optional tablePermissions
+  DefComputedField mDefOpt f tn computedExp ft tp
+    <$> optional (caseInsensitiveSymbol "COMMENT" >> CommentStr <$> quotedText)
 
 tokenizer :: Parser Tokenizer
 tokenizer = label "tokenizer" $ lexeme $ choice
@@ -1353,6 +1422,7 @@ defineS = label "defineS" $ lexeme $
     , defScope
     , defTable
     , defEvent
+    , defComputedField
     , defField
     , defAnalyzer
     , defIndex
