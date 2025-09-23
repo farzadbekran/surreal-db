@@ -933,7 +933,7 @@ instance ToQL Exp where
     OPE op e1 e2 -> prepText [toQL e1, toQL op, toQL e2]
     AppE fn ps -> prepText $ [toQL fn <> "("] <> intersperse ", " (map toQL ps) <> [")"]
     IndexE e idx -> toQL e <> toQL idx
-    AccessorE e1 e2 -> toQL e1 <> "." <> toQL e2
+    AccessorE e1 e2 -> toQL e1 <> toQL e2
     FilterE e f -> toQL e <> toQL f
     LitE le -> toQL le
     ConstE i -> toQL i
