@@ -24,6 +24,7 @@ getFieldLabel = \case
   WildCardField -> fail "Can't determine field label for WildCardField '*'!"
   SimpleField t -> return $ toQL t
   FieldWithPostFix f _ -> getFieldLabel f
+  IncomingRefField f -> getFieldLabel f
   FieldParam p -> case p of
     SQLParam t     -> return $ toQL t
     InputParam t _ -> return $ toQL t
