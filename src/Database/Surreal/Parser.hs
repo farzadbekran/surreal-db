@@ -653,18 +653,25 @@ insertE = label "insertE" $ lexeme $ do
 
 targetEdge :: Parser Target
 targetEdge = label "targetEdge" $ lexeme $ do
-  initialID <- recordID
+  mRid <- optional $ try recordID
+  mTN <- optional $ try tableName
+  mField <- optional $ try field
+  initialNode <- case (mRid, mTN, mField) of
+        (Just rid, _, _) -> return $ TargetRecID rid
+        (_, Just tn, _)  -> return $ TargetTable tn
+        (_, _, Just f)   -> return $ TargetField f
+        _otherwise       -> fail "invalid initial node for target!"
   edges <- some edge
   if null edges
     then fail "Invalid Edge!"
-    else return $ TargetEdge initialID edges
+    else return $ TargetEdge initialNode edges
 
 target :: Parser Target
 target = label "target" $ lexeme $ choice $ map try
   [ targetEdge
   , TargetRecID <$> recordID
   , TargetTable <$> tableName
-  , TargetParam <$> param
+  , TargetField <$> field
   ]
 
 createObject :: Parser CreateVal

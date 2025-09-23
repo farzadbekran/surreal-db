@@ -738,8 +738,8 @@ instance HasInput InsertVal where
 data Target
   = TargetTable !TableName
   | TargetRecID !RecordID
-  | TargetEdge !RecordID ![Edge]
-  | TargetParam !Param
+  | TargetEdge !Target ![Edge]
+  | TargetField !Field
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Target where
@@ -747,14 +747,14 @@ instance ToQL Target where
   toQL (TargetRecID rid) = toQL rid
   toQL (TargetEdge rid e) =
     foldl1 (<>) $ toQL rid : map toQL e
-  toQL (TargetParam p)  = toQL p
+  toQL (TargetField f)  = toQL f
 
 instance HasInput Target where
   getInputs = \case
     TargetTable _ -> []
     TargetRecID rid -> getInputs rid
     TargetEdge rid e -> getInputs rid <> concatMap getInputs e
-    TargetParam p -> getInputs p
+    TargetField f -> getInputs f
 
 data CreateVal
   = CreateObject !Exp
