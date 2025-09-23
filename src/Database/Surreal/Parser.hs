@@ -332,6 +332,10 @@ simpleField = label "SimpleField" $ lexeme $ SimpleField . FieldName <$> identif
 fieldParam :: Parser Field
 fieldParam = FieldParam <$> param
 
+incomingRefField :: Parser Field
+incomingRefField = label "incomingRefField"
+  $ lexeme (symbol "<~" >> IncomingRefField <$> field)
+
 fieldWithPostFix :: Parser Field
 fieldWithPostFix = label "SimpleField" $ lexeme $ do
   f <- choice [simpleField, fieldParam]
@@ -341,6 +345,7 @@ fieldWithPostFix = label "SimpleField" $ lexeme $ do
 field :: Parser Field
 field = label "field" $ lexeme $ choice $ map try
   [ wildCardField
+  , incomingRefField
   , fieldWithPostFix
   , fieldParam
   , simpleField

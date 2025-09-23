@@ -228,6 +228,7 @@ data Field
   = WildCardField
   | SimpleField !FieldName -- ^ name
   | FieldParam !Param
+  | IncomingRefField !Field
   | FieldWithPostFix !Field !Exp -- ^ field.id, field[1], field(where a == b) etc
   deriving (Eq, Generic, Ord, Read, Show)
 
@@ -235,6 +236,7 @@ instance ToQL Field where
   toQL WildCardField           = "*"
   toQL (SimpleField t)         = toQL t
   toQL (FieldParam p)          = toQL p
+  toQL (IncomingRefField f)    = "<~" <> toQL f
   toQL (FieldWithPostFix _f e) = toQL e -- f is repeated in e, so we ignore it here
 
 instance HasInput Field where
