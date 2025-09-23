@@ -68,7 +68,7 @@ simpleQuery1 :: Eff AppEffs (Maybe Value)
 simpleQuery1 = select (maybe (P.error "invalid identifier") (Table . TableName) (mkIdentifier "artist"))
 
 simpleQuery2 :: Eff AppEffs Value
-simpleQuery2 = query () [sql| (SELECT * FROM artist) :: Value; |]
+simpleQuery2 = query () [sql| (SELECT * FROM artist) :: (Value); |]
 
 simpleQuery3 :: Eff AppEffs [Rec ("id" .== RecordID .+ "first_name" .== Text .+ "company_name" .== Maybe Text)]
 simpleQuery3 = query () [sql|
@@ -218,14 +218,14 @@ updateTest2 = do
 
 selectTest1 :: Eff AppEffs ()
 selectTest1 = do
-  let q = [sql| (SELECT * FROM person WHERE ->knows->person->knows(WHERE influencer = %v1 :: Bool) TIMEOUT 5s) :: Value; |]
+  let q = [sql| (SELECT * FROM person WHERE ->knows->person->knows(WHERE influencer = %v1 :: Bool) TIMEOUT 5s) :: (Value); |]
   query (#v1 .== True) q >>= print
 
 relateTest1 :: Eff AppEffs ()
 relateTest1 = do
   let q = [sql|
               (RELATE person:l19zjikkw1p1h9o6ixrg->wrote->article:8nkk6uj4yprt49z7y3zm
-              SET time.written = time::now()) :: Value;
+              SET time.written = time::now()) :: (Value);
               |]
   query () q >>= print
 
@@ -280,9 +280,13 @@ defineTest1 = do
             (update users set name = "test" where name != $user.name) :: ();
             (RELATE $inputUserId.id->owns_file->(%p2 :: (Text))) :: ();
             (RELATE $inputUserId.id->owns_file(where a == b)->test.field1) :: ();
-            (SELECT field1.* from test) :: Value;
-            (SELECT %p :: (Text) from test where $param.field[1] == 1) :: Value;
-            (create test_table_2 set p.testField = /[A-Z]/) :: Value;
+            (SELECT field1.* from test) :: (Value);
+            (SELECT %p :: (Text) from test where $param.field[1] == 1) :: (Value);
+            (create test_table_2 set p.testField = /[A-Z]/) :: (Value);
+            (select test.{a,b} from mytable) :: (Value);
+            (select test[0..100] from mytable) :: (Value);
+            (select test.field from mytable) :: (Value);
+            (select $myparam from mytable) :: (Value);
             |]
   query (#p .== ("my val" :: Text) .+ #p2 .== ("my val 2" :: Text)) q >>= print
 
@@ -316,6 +320,6 @@ txTest = do
               (INSERT INTO test { name : "tx-farzad", fname : "tx-bekran" }) :: (Vector Value);
               LET $res = select id from test limit 1;
               commit;
-              return $res :: Value;
+              return $res :: (Value);
               |]
   query () q >>= print

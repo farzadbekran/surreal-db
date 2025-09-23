@@ -885,13 +885,26 @@ instance ToQL ExpressionFilter where
 instance HasInput ExpressionFilter where
   getInputs (ExpressionFilter we) = getInputs we
 
+data ExpressionAccessor
+  = SingleAccessor !Exp
+  | MultiAccessor ![Exp]
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL ExpressionAccessor where
+  toQL (SingleAccessor a) = "." <> toQL a
+  toQL (MultiAccessor as) = ".{" <> intercalate "," (map toQL as) <> "}"
+
+instance HasInput ExpressionAccessor where
+  getInputs (SingleAccessor a) = getInputs a
+  getInputs (MultiAccessor as) = concatMap getInputs as
+
 data Exp
   = TypedE !Exp !TypeDef
   | OPE !Operator !Exp !Exp
   | AppE !FNName ![Exp]
   | IndexE !Exp !ExpressionIndex
   | FilterE !Exp !ExpressionFilter
-  | AccessorE !Exp !Exp
+  | AccessorE !Exp !ExpressionAccessor
   | LitE !Literal
   | ConstE !Identifier
   | IfThenE !Exp !Exp
@@ -1593,6 +1606,7 @@ data Statement
   | ThrowS !Exp
   | KillS !KillParam
   | SleepS !Duration
+  | InParenS !Statement
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Statement where
@@ -1613,6 +1627,7 @@ instance ToQL Statement where
     KillS kp -> "KILL " <> toQL kp
     RemoveS r -> "REMOVE " <> toQL r
     SleepS d -> "SLEEP " <> toQL d
+    InParenS s -> "(" <> toQL s <> ")"
 
 instance HasInput Statement where
   getInputs = \case

@@ -42,6 +42,9 @@ caseInsensitiveSymbol s = label s $ lexeme $ L.symbol' sc s
 betweenParens :: Parser a -> Parser a
 betweenParens = between (lexeme $ char '(') (lexeme $ char ')')
 
+betweenBrackets :: Parser a -> Parser a
+betweenBrackets = between (lexeme $ char '{') (lexeme $ char '}')
+
 maybeBetweenParens :: Parser a -> Parser a
 maybeBetweenParens p = p <|> betweenParens p
 
@@ -697,17 +700,18 @@ updatePatch = label "updatePatch" $ lexeme $ do
   _ <- caseInsensitiveSymbol "PATCH"
   UpdatePatch <$> exp
 
+parseSetField :: Parser (Field, Exp)
+parseSetField = do
+  f <- field
+  _ <- lexeme $ char '='
+  e <- exp
+  return (f,e)
+
 updateValues :: Parser UpdateVal
 updateValues = label "updateValues" $ lexeme $ do
   _ <- caseInsensitiveSymbol "SET"
-  fields <- sepBy parseField (lexeme $ char ',')
+  fields <- sepBy parseSetField (lexeme $ char ',')
   return $ UpdateValues fields
-  where
-    parseField = do
-      f <- field
-      _ <- lexeme $ char '='
-      e <- exp
-      return (f,e)
 
 updateVal :: Parser UpdateVal
 updateVal = label "updateVal" $ lexeme $ choice
@@ -785,8 +789,10 @@ deleteE = label "deleteE" $ lexeme $ do
 
 typedExp :: Parser (Exp -> Exp)
 typedExp = do
-  _ <- lexeme $ symbol "::"
-  t <- parseType
+  _ <- symbol "::"
+  t <- try (symbol "()" $> T "()" [])
+       <|> try (betweenParens parseType)
+       <|> betweenParens nestedType
   return (`TypedE` t)
 
 edgeSelectorE :: Parser Exp
@@ -840,12 +846,12 @@ expressionIndex :: Parser ExpressionIndex
 expressionIndex = label "expressionIndex" $ lexeme $
   between (symbol "[") (symbol "]") $
     choice $ map try
-      [ InclusiveRange <$> exp <* symbol "..=" <*> exp
-      , ExclusiveRange <$> exp <* symbol ".." <*> exp
-      , OpenStartIncl <$ symbol "..=" <*> exp
-      , OpenStartExcl <$ symbol ".." <*> exp
-      , OpenEnd <$> exp <* symbol ".."
-      , SingleIndex <$> exp
+      [ InclusiveRange <$> litE <* symbol "..=" <*> litE
+      , ExclusiveRange <$> litE <* symbol ".." <*> litE
+      , OpenStartIncl <$ symbol "..=" <*> litE
+      , OpenStartExcl <$ symbol ".." <*> litE
+      , OpenEnd <$> litE <* symbol ".."
+      , SingleIndex <$> litE
       ]
 
 indexE :: Parser (Exp -> Exp)
@@ -859,18 +865,23 @@ filterE = label "filterE" $ lexeme $
     we <- ExpressionFilter . WhereE <$> where_
     return (`FilterE` we)
 
+expressionAccessor :: Parser ExpressionAccessor
+expressionAccessor = label "expressionAccessor" $ lexeme $ do
+  choice [ betweenBrackets (MultiAccessor <$> sepBy litE (lexeme $ symbol ","))
+         , SingleAccessor . LitE . FieldL <$> field ]
+
 accessorE :: Parser (Exp -> Exp)
 accessorE = label "accessorE" $ lexeme $ do
   _ <- symbol "."
-  f <- field
-  return (`AccessorE` (LitE $ FieldL f))
+  ea <- expressionAccessor
+  return (`AccessorE` ea)
 
 -- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
 operatorTable = [ [ E.Postfix typedExp
                   , E.Postfix indexE
                   , E.Postfix filterE
-                  , E.InfixL (symbol "." $> AccessorE)
+                  , E.Postfix accessorE
                   , E.InfixL (symbol "->" $> OPE (:->))
                   , E.InfixL (symbol "<-" $> OPE (:<-))
                   , E.InfixN (symbol "**" $> OPE (:**))
@@ -924,7 +935,8 @@ exp = E.makeExprParser term operatorTable
 term :: Parser Exp
 term = sc
   >> lexeme (choice $
-             [ try ifThenElseE
+             [ try appE
+             , try ifThenElseE
              , ifThenE
              , selectE
              , liveSelectE
@@ -938,9 +950,8 @@ term = sc
              , WhereE <$> where_
              , showChangesE
              ] <> map try
-              [ appE
+              [ InParenE <$> betweenParens exp
               , litE
-              , InParenE <$> betweenParens exp
               , BlockE <$> between (lexeme $ char '{') (lexeme $ char '}') block
               , constE
               , edgeSelectorE
@@ -1493,7 +1504,8 @@ sleepS = label "sleepS" $ lexeme $ do
 statement :: Parser Statement
 statement =
   sc >> lexeme (choice $ map try
-                [ useS
+                [ InParenS <$> betweenParens statement
+                , useS
                 , letS
                 , caseInsensitiveSymbol "BEGIN"
                   >> optional (caseInsensitiveSymbol "TRANSACTION")
