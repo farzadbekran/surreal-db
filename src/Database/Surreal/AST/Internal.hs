@@ -1497,9 +1497,7 @@ instance ToQL Define where
          , toQL tn
          , toQL mFieldType
          , toQL mRef
-         , case mDefExp of
-             Just e  -> "DEFAULT " <> toQL e
-             Nothing -> ""
+         , toQL mDefExp
          , case mValExp of
              Just e  -> "VALUE " <> toQL e
              Nothing -> ""
