@@ -198,8 +198,8 @@ data DefaultExp
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL DefaultExp where
-  toQL (DefaultExp e)       = "DEFAULT" <> toQL e
-  toQL (DefaultAlwaysExp e) = "DEFAULT ALWAYS" <> toQL e
+  toQL (DefaultExp e)       = "DEFAULT " <> toQL e
+  toQL (DefaultAlwaysExp e) = "DEFAULT ALWAYS " <> toQL e
 
 data TypeDef
   = T !String ![TypeDef]
