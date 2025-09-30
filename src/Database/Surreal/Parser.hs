@@ -387,17 +387,17 @@ ifThenE :: Parser Exp
 ifThenE = label "IfThenE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "IF"
   e1 <- exp
-  _ <- optional $ caseInsensitiveSymbol "THEN"
-  IfThenE e1 <$> exp <*> (optional $ caseInsensitiveSymbol "END" $> END)
+  mThen <- optional (caseInsensitiveSymbol "THEN" $> THEN)
+  IfThenE e1 mThen <$> exp <*> (optional $ caseInsensitiveSymbol "END" $> END)
 
 ifThenElseE :: Parser Exp
 ifThenElseE = label "IfThenElseE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "IF"
   e1 <- exp
-  _ <- optional $ caseInsensitiveSymbol "THEN"
+  mThen <- optional (caseInsensitiveSymbol "THEN" $> THEN)
   e2 <- exp
-  _ <- caseInsensitiveSymbol "ELSE"
-  IfThenElseE e1 e2 <$> exp <*> (optional $ caseInsensitiveSymbol "END" $> END)
+  mElse <- optional (caseInsensitiveSymbol "ELSE" $> ELSE)
+  IfThenElseE e1 mThen e2 mElse <$> exp <*> (optional $ caseInsensitiveSymbol "END" $> END)
 
 parseCapitalWord :: Parser Text
 parseCapitalWord = lexeme $ do

@@ -926,6 +926,18 @@ data END = END
 instance ToQL END where
   toQL _ = "END"
 
+data THEN = THEN
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL THEN where
+  toQL _ = "THEN"
+
+data ELSE = ELSE
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL ELSE where
+  toQL _ = "ELSE"
+
 data Exp
   = TypedE !Exp !TypeDef
   | OPE !Operator !Exp !Exp
@@ -937,8 +949,8 @@ data Exp
   | ClosureE !ClosureExpression
   | LitE !Literal
   | ConstE !Identifier
-  | IfThenE !Exp !Exp !(Maybe END)
-  | IfThenElseE !Exp !Exp !Exp !(Maybe END)
+  | IfThenE !Exp !(Maybe THEN) !Exp !(Maybe END)
+  | IfThenElseE !Exp !(Maybe THEN) !Exp !(Maybe ELSE) !Exp !(Maybe END)
   | EdgeSelectorE !(Maybe Field) ![Edge]
   | SelectE !(Maybe VALUE) !Selectors !(Maybe OMIT) !FROM !(Maybe WHERE) !(Maybe SPLIT) !(Maybe GROUP) !(Maybe ORDER) !(Maybe LIMIT) !(Maybe START) !(Maybe FETCH) !(Maybe TIMEOUT) !(Maybe PARALLEL) !(Maybe EXPLAIN)
   | LiveSelectE !(Maybe VALUE) !(Either DIFF Selectors) !FROM !(Maybe WHERE) !(Maybe FETCH)
@@ -967,13 +979,18 @@ instance ToQL Exp where
     FilterE e f -> toQL e <> toQL f
     LitE le -> toQL le
     ConstE i -> toQL i
-    IfThenE e te mEnd -> prepText [ "IF", toQL e
+    IfThenE e mThen te mEnd -> prepText [ "IF"
+                                  , toQL e
+                                  , toQL mThen
                                   , toQL te
                                   , toQL mEnd
                                   ]
-    IfThenElseE e te fe mEnd -> prepText [ "IF", toQL e
+    IfThenElseE e mThen te mElse fe mEnd -> prepText [ "IF"
+                                         , toQL e
+                                         , toQL mThen
                                          , toQL te
-                                         , "ELSE", toQL fe
+                                         , toQL mElse
+                                         , toQL fe
                                          , toQL mEnd
                                          ]
     EdgeSelectorE mf es -> foldl1 (<>) $ toQL mf : map toQL es
@@ -1071,8 +1088,8 @@ instance HasInput Exp where
     ClosureE ce -> getInputs ce
     LitE le -> getInputs le
     ConstE _ -> []
-    IfThenE e te _ -> getInputs e <> getInputs te
-    IfThenElseE e te fe _ -> getInputs e <> getInputs te <> getInputs fe
+    IfThenE e _ te _ -> getInputs e <> getInputs te
+    IfThenElseE e _ te _ fe _ -> getInputs e <> getInputs te <> getInputs fe
     EdgeSelectorE mf es -> maybe [] getInputs mf <> concatMap getInputs es
     SelectE _ selectors _ from mWhere mSplit mGroup mOrder mLimit mStart mFetch _ _ _
       -> getInputs selectors
