@@ -905,7 +905,7 @@ data ExpressionMemberCall
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL ExpressionMemberCall where
-  toQL (ExpressionMemberCall f es) = toQL f <> ".(" <> intercalate "," (map toQL es) <> ")"
+  toQL (ExpressionMemberCall f es) = "." <> toQL f <> "(" <> intercalate "," (map toQL es) <> ")"
 
 instance HasInput ExpressionMemberCall where
   getInputs (ExpressionMemberCall f es) = getInputs f <> concatMap getInputs es
