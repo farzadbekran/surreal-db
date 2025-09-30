@@ -339,7 +339,7 @@ incomingRefField = label "incomingRefField"
 fieldWithPostFix :: Parser Field
 fieldWithPostFix = label "SimpleField" $ lexeme $ do
   f <- choice [simpleField, fieldParam]
-  e <- choice [indexE, filterE, memberCallE, accessorE]
+  e <- choice [indexE, filterE, try memberCallE, accessorE]
   return $ FieldWithPostFix f (e $ LitE $ FieldL f)
 
 field :: Parser Field
@@ -388,7 +388,7 @@ ifThenE = label "IfThenE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "IF"
   e1 <- exp
   _ <- optional $ caseInsensitiveSymbol "THEN"
-  IfThenE e1 <$> exp
+  IfThenE e1 <$> exp <*> (optional $ caseInsensitiveSymbol "END" $> END)
 
 ifThenElseE :: Parser Exp
 ifThenElseE = label "IfThenElseE" $ lexeme $ do
@@ -397,7 +397,7 @@ ifThenElseE = label "IfThenElseE" $ lexeme $ do
   _ <- optional $ caseInsensitiveSymbol "THEN"
   e2 <- exp
   _ <- caseInsensitiveSymbol "ELSE"
-  IfThenElseE e1 e2 <$> exp
+  IfThenElseE e1 e2 <$> exp <*> (optional $ caseInsensitiveSymbol "END" $> END)
 
 parseCapitalWord :: Parser Text
 parseCapitalWord = lexeme $ do
@@ -879,7 +879,7 @@ filterE = label "filterE" $ lexeme $
 
 expressionAccessor :: Parser ExpressionAccessor
 expressionAccessor = label "expressionAccessor" $ lexeme $ do
-  choice [ betweenBrackets (MultiAccessor <$> sepBy (appE <|> litE) (lexeme $ symbol ","))
+  choice [ betweenBrackets (MultiAccessor <$> sepBy (try appE <|> litE) (lexeme $ symbol ","))
          , SingleAccessor . LitE . FieldL <$> field ]
 
 accessorE :: Parser (Exp -> Exp)
@@ -892,18 +892,24 @@ memberCallE :: Parser (Exp -> Exp)
 memberCallE = label "memberCallE" $ lexeme $ do
   _ <- symbol "."
   f <- simpleField
-  _ <- symbol "("
-  call <- ExpressionMemberCall f <$> sepBy (appE <|> litE) (lexeme $ char ',')
-  _ <- symbol ")"
+  call <- betweenParens
+    $ ExpressionMemberCall f <$> sepBy (closureE <|> try appE <|> litE) (lexeme $ char ',')
   return (`MemberCallE` call)
+
+closureE :: Parser Exp
+closureE = label "closureE" $ lexeme $ do
+  _ <- char '|'
+  ps <- sepBy param (lexeme $ char ',')
+  _ <- char '|'
+  ClosureE . ClosureExpression ps <$> exp
 
 -- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
 operatorTable = [ [ E.Postfix typedExp
                   , E.Postfix indexE
                   , E.Postfix filterE
-                  , E.Postfix accessorE
                   , E.Postfix memberCallE
+                  , E.Postfix accessorE
                   , E.InfixL (symbol "->" $> OPE (:->))
                   , E.InfixL (symbol "<-" $> OPE (:<-))
                   , E.InfixN (symbol "**" $> OPE (:**))
@@ -959,6 +965,7 @@ term = sc
   >> lexeme (choice $
              [ try appE -- array::len(a)
              , try ifThenElseE
+             , closureE
              , ifThenE
              , selectE
              , liveSelectE
@@ -1183,7 +1190,7 @@ defTable = label "defTable" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "TABLE"
   mDefOpt <- optional
-    $ (caseInsensitiveSymbol "OWERWRITE" $> Overwrite)
+    $ (caseInsensitiveSymbol "OVERWRITE" $> Overwrite)
     <|> (do
             _ <- caseInsensitiveSymbol "IF"
             _ <- caseInsensitiveSymbol "NOT"
@@ -1207,7 +1214,7 @@ defFn = label "defFn" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "FUNCTION"
   mDefOpt <- optional
-    $ (caseInsensitiveSymbol "OWERWRITE" $> Overwrite)
+    $ (caseInsensitiveSymbol "OVERWRITE" $> Overwrite)
     <|> (do
             _ <- caseInsensitiveSymbol "IF"
             _ <- caseInsensitiveSymbol "NOT"
@@ -1478,6 +1485,7 @@ defineS = label "defineS" $ lexeme $
     , defToken
     , defScope
     , defTable
+    , defFn
     , defEvent
     , defComputedField
     , defField

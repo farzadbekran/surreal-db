@@ -910,6 +910,22 @@ instance ToQL ExpressionMemberCall where
 instance HasInput ExpressionMemberCall where
   getInputs (ExpressionMemberCall f es) = getInputs f <> concatMap getInputs es
 
+data ClosureExpression
+  = ClosureExpression ![Param] !Exp
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL ClosureExpression where
+  toQL (ClosureExpression ps e) = "| " <> intercalate "," (map toQL ps) <> " |" <> toQL e
+
+instance HasInput ClosureExpression where
+  getInputs (ClosureExpression ps e) = concatMap getInputs ps <> getInputs e
+
+data END = END
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL END where
+  toQL _ = "END"
+
 data Exp
   = TypedE !Exp !TypeDef
   | OPE !Operator !Exp !Exp
@@ -918,10 +934,11 @@ data Exp
   | FilterE !Exp !ExpressionFilter
   | AccessorE !Exp !ExpressionAccessor
   | MemberCallE !Exp !ExpressionMemberCall
+  | ClosureE !ClosureExpression
   | LitE !Literal
   | ConstE !Identifier
-  | IfThenE !Exp !Exp
-  | IfThenElseE !Exp !Exp !Exp
+  | IfThenE !Exp !Exp !(Maybe END)
+  | IfThenElseE !Exp !Exp !Exp !(Maybe END)
   | EdgeSelectorE !(Maybe Field) ![Edge]
   | SelectE !(Maybe VALUE) !Selectors !(Maybe OMIT) !FROM !(Maybe WHERE) !(Maybe SPLIT) !(Maybe GROUP) !(Maybe ORDER) !(Maybe LIMIT) !(Maybe START) !(Maybe FETCH) !(Maybe TIMEOUT) !(Maybe PARALLEL) !(Maybe EXPLAIN)
   | LiveSelectE !(Maybe VALUE) !(Either DIFF Selectors) !FROM !(Maybe WHERE) !(Maybe FETCH)
@@ -946,16 +963,19 @@ instance ToQL Exp where
     IndexE e idx -> toQL e <> toQL idx
     AccessorE e1 e2 -> toQL e1 <> toQL e2
     MemberCallE e call -> toQL e <> toQL call
+    ClosureE ce -> toQL ce
     FilterE e f -> toQL e <> toQL f
     LitE le -> toQL le
     ConstE i -> toQL i
-    IfThenE e te -> prepText [ "IF", toQL e
-                             , toQL te
-                             ]
-    IfThenElseE e te fe -> prepText [ "IF", toQL e
-                                    , toQL te
-                                    , "ELSE", toQL fe
-                                    ]
+    IfThenE e te mEnd -> prepText [ "IF", toQL e
+                                  , toQL te
+                                  , toQL mEnd
+                                  ]
+    IfThenElseE e te fe mEnd -> prepText [ "IF", toQL e
+                                         , toQL te
+                                         , "ELSE", toQL fe
+                                         , toQL mEnd
+                                         ]
     EdgeSelectorE mf es -> foldl1 (<>) $ toQL mf : map toQL es
     SelectE mValue selectors mOmit from mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain ->
       prepText [ "SELECT"
@@ -1048,10 +1068,11 @@ instance HasInput Exp where
     FilterE e f -> getInputs e <> getInputs f
     AccessorE e1 e2 -> getInputs e1 <> getInputs e2
     MemberCallE e call -> getInputs e <> getInputs call
+    ClosureE ce -> getInputs ce
     LitE le -> getInputs le
     ConstE _ -> []
-    IfThenE e te -> getInputs e <> getInputs te
-    IfThenElseE e te fe -> getInputs e <> getInputs te <> getInputs fe
+    IfThenE e te _ -> getInputs e <> getInputs te
+    IfThenElseE e te fe _ -> getInputs e <> getInputs te <> getInputs fe
     EdgeSelectorE mf es -> maybe [] getInputs mf <> concatMap getInputs es
     SelectE _ selectors _ from mWhere mSplit mGroup mOrder mLimit mStart mFetch _ _ _
       -> getInputs selectors

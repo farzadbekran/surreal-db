@@ -287,6 +287,19 @@ defineTest1 = do
             (select test[0..100] from mytable) :: (Value);
             (select test.field from mytable) :: (Value);
             (select $myparam from mytable) :: (Value);
+            DEFINE FUNCTION OVERWRITE fn::getZoneChildren($zoneId : record<zone>){
+                let $children = (select value children from zone where id == $zoneId).flatten();
+                if $children == []
+                then {
+                    return [];
+                } else {
+                    let $secondLevelChildren
+                      = $children.map(|$c| fn::getZoneChildren($c)).flatten();
+                    return array::union($children, $secondLevelChildren);
+                } end;
+                return "test";
+            };
+            return NONE :: ();
             |]
   query (#p .== ("my val" :: Text) .+ #p2 .== ("my val 2" :: Text)) q >>= print
 
