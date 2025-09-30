@@ -339,7 +339,7 @@ incomingRefField = label "incomingRefField"
 fieldWithPostFix :: Parser Field
 fieldWithPostFix = label "SimpleField" $ lexeme $ do
   f <- choice [simpleField, fieldParam]
-  e <- choice [indexE, filterE, accessorE]
+  e <- choice [indexE, filterE, memberCallE, accessorE]
   return $ FieldWithPostFix f (e $ LitE $ FieldL f)
 
 field :: Parser Field
@@ -873,13 +873,13 @@ indexE = label "indexE" $ lexeme $ do
 
 filterE :: Parser (Exp -> Exp)
 filterE = label "filterE" $ lexeme $
-  between (symbol "(") (symbol ")") $ do
+  betweenParens $ do
     we <- ExpressionFilter . WhereE <$> where_
     return (`FilterE` we)
 
 expressionAccessor :: Parser ExpressionAccessor
 expressionAccessor = label "expressionAccessor" $ lexeme $ do
-  choice [ betweenBrackets (MultiAccessor <$> sepBy litE (lexeme $ symbol ","))
+  choice [ betweenBrackets (MultiAccessor <$> sepBy (appE <|> litE) (lexeme $ symbol ","))
          , SingleAccessor . LitE . FieldL <$> field ]
 
 accessorE :: Parser (Exp -> Exp)
@@ -888,12 +888,22 @@ accessorE = label "accessorE" $ lexeme $ do
   ea <- expressionAccessor
   return (`AccessorE` ea)
 
+memberCallE :: Parser (Exp -> Exp)
+memberCallE = label "memberCallE" $ lexeme $ do
+  _ <- symbol "."
+  f <- simpleField
+  _ <- symbol "("
+  call <- ExpressionMemberCall f <$> sepBy (appE <|> litE) (lexeme $ char ',')
+  _ <- symbol ")"
+  return (`MemberCallE` call)
+
 -- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
 operatorTable = [ [ E.Postfix typedExp
                   , E.Postfix indexE
                   , E.Postfix filterE
                   , E.Postfix accessorE
+                  , E.Postfix memberCallE
                   , E.InfixL (symbol "->" $> OPE (:->))
                   , E.InfixL (symbol "<-" $> OPE (:<-))
                   , E.InfixN (symbol "**" $> OPE (:**))
@@ -947,7 +957,7 @@ exp = E.makeExprParser term operatorTable
 term :: Parser Exp
 term = sc
   >> lexeme (choice $
-             [ try appE
+             [ try appE -- array::len(a)
              , try ifThenElseE
              , ifThenE
              , selectE
@@ -1191,6 +1201,30 @@ defTable = label "defTable" $ lexeme $ do
   mTP <- optional tablePermissions
   DefTable mDefOpt tn mDrop st mTType as mChangeFeed mTP
     <$> optional (caseInsensitiveSymbol "COMMENT" >> CommentStr <$> quotedText)
+
+defFn :: Parser Define
+defFn = label "defFn" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFINE"
+  _ <- caseInsensitiveSymbol "FUNCTION"
+  mDefOpt <- optional
+    $ (caseInsensitiveSymbol "OWERWRITE" $> Overwrite)
+    <|> (do
+            _ <- caseInsensitiveSymbol "IF"
+            _ <- caseInsensitiveSymbol "NOT"
+            _ <- caseInsensitiveSymbol "EXISTS"
+            pure IfNotExists)
+  fnN <- fnName
+  params <- betweenParens (sepBy
+                           (do
+                              p <- param
+                              _ <- lexeme $ char ':'
+                              t <- dataType
+                              return (p, t)
+                           )
+                           (lexeme $ char ','))
+  blockE <- betweenBrackets block
+  mComment <- optional (caseInsensitiveSymbol "COMMENT" >> CommentStr <$> quotedText)
+  DefFn mDefOpt fnN params blockE mComment <$> optional tablePermissions
 
 defEvent :: Parser Define
 defEvent = label "defEvent" $ lexeme $ do

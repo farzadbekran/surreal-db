@@ -900,6 +900,16 @@ instance HasInput ExpressionAccessor where
   getInputs (SingleAccessor a) = getInputs a
   getInputs (MultiAccessor as) = concatMap getInputs as
 
+data ExpressionMemberCall
+  = ExpressionMemberCall !Field ![Exp]
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL ExpressionMemberCall where
+  toQL (ExpressionMemberCall f es) = toQL f <> ".(" <> intercalate "," (map toQL es) <> ")"
+
+instance HasInput ExpressionMemberCall where
+  getInputs (ExpressionMemberCall f es) = getInputs f <> concatMap getInputs es
+
 data Exp
   = TypedE !Exp !TypeDef
   | OPE !Operator !Exp !Exp
@@ -907,6 +917,7 @@ data Exp
   | IndexE !Exp !ExpressionIndex
   | FilterE !Exp !ExpressionFilter
   | AccessorE !Exp !ExpressionAccessor
+  | MemberCallE !Exp !ExpressionMemberCall
   | LitE !Literal
   | ConstE !Identifier
   | IfThenE !Exp !Exp
@@ -934,6 +945,7 @@ instance ToQL Exp where
     AppE fn ps -> prepText $ [toQL fn <> "("] <> intersperse ", " (map toQL ps) <> [")"]
     IndexE e idx -> toQL e <> toQL idx
     AccessorE e1 e2 -> toQL e1 <> toQL e2
+    MemberCallE e call -> toQL e <> toQL call
     FilterE e f -> toQL e <> toQL f
     LitE le -> toQL le
     ConstE i -> toQL i
@@ -1035,6 +1047,7 @@ instance HasInput Exp where
     IndexE e idx -> getInputs e <> getInputs idx
     FilterE e f -> getInputs e <> getInputs f
     AccessorE e1 e2 -> getInputs e1 <> getInputs e2
+    MemberCallE e call -> getInputs e <> getInputs call
     LitE le -> getInputs le
     ConstE _ -> []
     IfThenE e te -> getInputs e <> getInputs te
@@ -1423,6 +1436,7 @@ data Define
   | DefComputedField !(Maybe DefType) !Field !TableName !ComputedExp !(Maybe FieldType) !(Maybe TablePermissions) !(Maybe CommentStr)
   | DefAnalyzer !AnalyzerName !(Maybe [Tokenizer]) !(Maybe [Filter])
   | DefIndex !IndexName !TableName ![Field] !(Maybe (Either UNIQUE SearchAnalyzer))
+  | DefFn !(Maybe DefType) !FNName ![(Param, DataType)] !Block !(Maybe CommentStr) !(Maybe TablePermissions)
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Define where
@@ -1545,6 +1559,16 @@ instance ToQL Define where
              Just (Right sa) -> toQL sa
              Just (Left u)   -> toQL u
              Nothing         -> ""
+         ]
+    DefFn mDefType fnName params block mComment mPermissions
+      -> prepText
+         [ "DEFINE FUNCTION"
+         , toQL mDefType
+         , toQL fnName
+         , "(" <> concatMap (\(n,t) -> toQL n <> " : " <> toQL t) params <> ")"
+         , "{ " <> toQL block <> "}"
+         , toQL mComment
+         , toQL mPermissions
          ]
 
 data Remove
