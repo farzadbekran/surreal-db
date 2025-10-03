@@ -1,17 +1,17 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.36.0.
+-- This file has been generated from package.yaml by hpack version 0.37.0.
 --
 -- see: https://github.com/sol/hpack
 
 name:           surreal-db
-version:        0.1.0.0
-description:    Please see the README on GitHub at <https://github.com/githubuser/surreal-db#readme>
-homepage:       https://github.com/githubuser/surreal-db#readme
-bug-reports:    https://github.com/githubuser/surreal-db/issues
-author:         Author name here
-maintainer:     example@example.com
-copyright:      2023 Author name here
+version:        0.1.1.0
+description:    Please see the README on GitHub at <https://github.com/farzadbekran/surreal-db#readme>
+homepage:       https://github.com/farzadbekran/surreal-db#readme
+bug-reports:    https://github.com/farzadbekran/surreal-db/issues
+author:         Farzad Bekran
+maintainer:     farzadbekran@gmail.com
+copyright:      2025 Farzad Bekran
 license:        BSD3
 license-file:   LICENSE
 build-type:     Simple
@@ -21,7 +21,7 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: https://github.com/githubuser/surreal-db
+  location: https://github.com/farzadbekran/surreal-db
 
 library
   exposed-modules:
@@ -77,6 +77,7 @@ library
     , text
     , time
     , transformers
+    , uuid
     , vector
     , websockets
   default-language: Haskell2010
@@ -124,6 +125,7 @@ test-suite surreal-db-test
     , text
     , time
     , transformers
+    , uuid
     , vector
     , websockets
   default-language: Haskell2010

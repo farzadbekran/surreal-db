@@ -14,6 +14,7 @@ import           Control.Monad.Fail             ( MonadFail (..) )
 import           Data.Char                      ( isAlphaNum )
 import           Data.Foldable                  ( foldl )
 import           Data.Time.ISO8601              ( parseISO8601 )
+import qualified Data.UUID                      as UUID
 import           Data.Void
 import           Database.Surreal.AST
 import           Text.Megaparsec
@@ -32,7 +33,7 @@ lexeme = L.lexeme sc
 
 -- | Parse the exact String given
 symbol :: String -> Parser String
-symbol s = L.symbol sc s
+symbol = L.symbol sc
 
 -- | Match the string 's', accepting either lowercase or uppercase form of each character
 caseInsensitiveSymbol :: String -> Parser String
@@ -41,6 +42,9 @@ caseInsensitiveSymbol s = label s $ lexeme $ L.symbol' sc s
 betweenParens :: Parser a -> Parser a
 betweenParens = between (lexeme $ char '(') (lexeme $ char ')')
 
+betweenBrackets :: Parser a -> Parser a
+betweenBrackets = between (lexeme $ char '{') (lexeme $ char '}')
+
 maybeBetweenParens :: Parser a -> Parser a
 maybeBetweenParens p = p <|> betweenParens p
 
@@ -48,8 +52,8 @@ identifier :: Parser Identifier
 identifier = lexeme $ do
   s <- pack <$> takeWhile1P Nothing isValidIdentifierChar
   case mkIdentifier s of
-    Just i -> return i
-    _      -> fail $ "invalid identifier: " <> unpack s
+    Just i  -> return i
+    Nothing -> fail $ "invalid identifier: " <> unpack s
 
 -- | Type Parsers
 
@@ -103,6 +107,14 @@ intParser = label "Int64" $ do
       Just r  -> return r
       Nothing -> fail "Invalid Int64"
 
+uuidParser :: Parser UUID.UUID
+uuidParser = label "UUID" $ do
+  _ <- symbol "u"
+  t <- between (char '\'') (char '\'') (takeWhileP Nothing (/= '\''))
+  case UUID.fromString t of
+    Just uuid -> return uuid
+    Nothing   -> fail "Invalid UUID"
+
 floatParser :: Parser Float
 floatParser = label "Float" $ do
   mNeg <- optional (symbol "-")
@@ -121,11 +133,12 @@ floatL = label "FloatL" $ lexeme $ FloatL <$> L.signed sc floatParser
 
 utcTimeParser :: Parser UTCTime
 utcTimeParser = label "utcTimeParser" $ lexeme $ do
+  _ <- symbol "d" -- starts with 'd'
   s <- unpack <$> quotedText
   let mUTC = parseISO8601 s
   case mUTC of
-    Just utc -> return utc
-    _        -> fail "Invalid ISO8601 DateTime"
+    Just utc   -> return utc
+    _otherwise -> fail "Invalid ISO8601 DateTime"
 
 dateTimeL :: Parser Literal
 dateTimeL = label "dateTimeL" $ lexeme $ DateTimeL <$> utcTimeParser
@@ -166,14 +179,6 @@ textID = label "TextID" $ lexeme $ do
        <|> pack <$> between (char '⟨') (char '⟩') (takeWhileP Nothing (/= '⟩'))
        <|> pack <$> some alphaNumChar
   return $ TextID t
-
-uuidID :: Parser ID
-uuidID = label "UUIDID" $ lexeme $ do
-  _ <- symbol "u"
-  t <- pack <$> between (char '\'') (char '\'') (takeWhileP Nothing (/= '\''))
-       <|> pack <$> between (char '"') (char '"') (takeWhileP Nothing (/= '"'))
-       <|> pack <$> between (char '⟨') (char '⟩') (takeWhileP Nothing (/= '⟩'))
-  return $ UUIDID t
 
 numID :: Parser ID
 numID = label "numID" $ lexeme $ do
@@ -217,7 +222,7 @@ id_ :: Parser ID
 id_ = label "ID" $ choice $ map try
   [ randomID
   , numID
-  , uuidID
+  , UUIDID <$> uuidParser
   , textID
   , objID
   , tupID
@@ -302,6 +307,7 @@ literal = lexeme $ maybeBetweenParens $ choice $ map try
   [ noneL
   , nullL
   , boolL
+  , UUIDL <$> uuidParser
   , dateTimeL
   , durationL
   , floatL
@@ -323,43 +329,32 @@ wildCardField = label "wildCardField" $ lexeme $ symbol "*" $> WildCardField
 simpleField :: Parser Field
 simpleField = label "SimpleField" $ lexeme $ SimpleField . FieldName <$> identifier
 
-indexedField :: Parser (Field -> Field)
-indexedField = label "IndexedField" $ lexeme $ do
-  is <- many $ between (char '[') (char ']') literal
-  if null is
-    then
-    fail "Empty index!"
-    else
-    return (`IndexedField` is)
-
-filteredField :: Parser Field
-filteredField = label "FilteredField" $ lexeme $ betweenParens $ do
-  f <- field
-  FilteredField f <$> where_
-
-fieldOperatorTable :: [[E.Operator Parser Field]]
-fieldOperatorTable = [ [ E.Postfix indexedField
-                       , E.InfixL (symbol "." $> CompositeField)
-                       ] ]
-
 fieldParam :: Parser Field
-fieldParam = label "fieldParam" $ FieldParam <$> param
+fieldParam = FieldParam <$> param
+
+incomingRefField :: Parser Field
+incomingRefField = label "incomingRefField"
+  $ lexeme (symbol "<~" >> IncomingRefField <$> field)
+
+fieldWithPostFix :: Parser Field
+fieldWithPostFix = label "SimpleField" $ lexeme $ do
+  f <- choice [simpleField, fieldParam]
+  e <- choice [indexE, filterE, try memberCallE, accessorE]
+  return $ FieldWithPostFix f (e $ LitE $ FieldL f)
 
 field :: Parser Field
-field = E.makeExprParser fieldTerm fieldOperatorTable
-
-fieldTerm :: Parser Field
-fieldTerm = lexeme $ choice $ map try
-  [ fieldParam
-  , filteredField
+field = label "field" $ lexeme $ choice $ map try
+  [ wildCardField
+  , incomingRefField
+  , fieldWithPostFix
+  , fieldParam
   , simpleField
-  , wildCardField
   ]
 
 fnName :: Parser FNName
 fnName = label "FNName" $ lexeme $ do
   parts <- sepBy identifier (symbol "::")
-  if null parts
+  if length parts < 2
     then fail "Invalid function name."
     else
       return $ FNName parts
@@ -380,29 +375,29 @@ constE = label "ConstE" $ lexeme $ ConstE <$> identifier
 param :: Parser Param
 param = label "Param" $ lexeme $ choice
   [ do _ <- char '$'
-       SQLParam . ParamName <$> identifier
+       SQLParam <$> field
   , do
       _ <- char '%'
-      n <- ParamName <$> identifier
+      f <- field
       _ <- lexeme $ symbol "::"
-      InputParam n <$> parseType
+      InputParam f <$> parseType
   ]
 
 ifThenE :: Parser Exp
 ifThenE = label "IfThenE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "IF"
   e1 <- exp
-  _ <- optional $ caseInsensitiveSymbol "THEN"
-  IfThenE e1 <$> exp
+  mThen <- optional (caseInsensitiveSymbol "THEN" $> THEN)
+  IfThenE e1 mThen <$> exp <*> (optional $ caseInsensitiveSymbol "END" $> END)
 
 ifThenElseE :: Parser Exp
 ifThenElseE = label "IfThenElseE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "IF"
   e1 <- exp
-  _ <- optional $ caseInsensitiveSymbol "THEN"
+  mThen <- optional (caseInsensitiveSymbol "THEN" $> THEN)
   e2 <- exp
-  _ <- caseInsensitiveSymbol "ELSE"
-  IfThenElseE e1 e2 <$> exp
+  mElse <- optional (caseInsensitiveSymbol "ELSE" $> ELSE)
+  IfThenElseE e1 mThen e2 mElse <$> exp <*> (optional $ caseInsensitiveSymbol "END" $> END)
 
 parseCapitalWord :: Parser Text
 parseCapitalWord = lexeme $ do
@@ -473,6 +468,7 @@ selector = E.makeExprParser selectorTerm selectorOperatorTable
 selectorTerm :: Parser Selector
 selectorTerm = lexeme $ choice $ map try
   [ fieldSelector
+  , betweenParens fieldSelector
   , expSelector
   , edgeSelector
   ]
@@ -657,18 +653,25 @@ insertE = label "insertE" $ lexeme $ do
 
 targetEdge :: Parser Target
 targetEdge = label "targetEdge" $ lexeme $ do
-  initialID <- recordID
+  mRid <- optional $ try recordID
+  mTN <- optional $ try tableName
+  mField <- optional $ try field
+  initialNode <- case (mRid, mTN, mField) of
+        (Just rid, _, _) -> return $ TargetRecID rid
+        (_, Just tn, _)  -> return $ TargetTable tn
+        (_, _, Just f)   -> return $ TargetField f
+        _otherwise       -> fail "invalid initial node for target!"
   edges <- some edge
   if null edges
     then fail "Invalid Edge!"
-    else return $ TargetEdge initialID edges
+    else return $ TargetEdge initialNode edges
 
 target :: Parser Target
 target = label "target" $ lexeme $ choice $ map try
   [ targetEdge
   , TargetRecID <$> recordID
   , TargetTable <$> tableName
-  , TargetParam <$> param
+  , TargetField <$> field
   ]
 
 createObject :: Parser CreateVal
@@ -709,17 +712,18 @@ updatePatch = label "updatePatch" $ lexeme $ do
   _ <- caseInsensitiveSymbol "PATCH"
   UpdatePatch <$> exp
 
+parseSetField :: Parser (Field, Exp)
+parseSetField = do
+  f <- field
+  _ <- lexeme $ char '='
+  e <- exp
+  return (f,e)
+
 updateValues :: Parser UpdateVal
 updateValues = label "updateValues" $ lexeme $ do
   _ <- caseInsensitiveSymbol "SET"
-  fields <- sepBy parseField (lexeme $ char ',')
+  fields <- sepBy parseSetField (lexeme $ char ',')
   return $ UpdateValues fields
-  where
-    parseField = do
-      f <- field
-      _ <- lexeme $ char '='
-      e <- exp
-      return (f,e)
 
 updateVal :: Parser UpdateVal
 updateVal = label "updateVal" $ lexeme $ choice
@@ -765,11 +769,13 @@ updateE = label "updateE" $ lexeme $ do
 
 relateTarget :: Parser RelateTarget
 relateTarget = label "RelateTarget" $ lexeme $ do
-  rid1 <- recordID
-  _ <- symbol "->"
-  tn <- tableName
-  _ <- symbol "->"
-  RelateTarget rid1 tn <$> recordID
+  e <- exp
+  case e of
+    OPE (:->) (OPE (:->) _ _) _ -> return $ RelateTarget e
+    OPE (:->) (OPE (:<-) _ _) _ -> return $ RelateTarget e
+    OPE (:<-) (OPE (:->) _ _) _ -> return $ RelateTarget e
+    OPE (:<-) (OPE (:<-) _ _) _ -> return $ RelateTarget e
+    _otherwise                  -> fail "invalid relate target!"
 
 relateE :: Parser Exp
 relateE = label "relateE" $ lexeme $ do
@@ -795,8 +801,10 @@ deleteE = label "deleteE" $ lexeme $ do
 
 typedExp :: Parser (Exp -> Exp)
 typedExp = do
-  _ <- lexeme $ symbol "::"
-  t <- parseType
+  _ <- symbol "::"
+  t <- try (symbol "()" $> T "()" [])
+       <|> try (betweenParens parseType)
+       <|> betweenParens nestedType
   return (`TypedE` t)
 
 edgeSelectorE :: Parser Exp
@@ -850,12 +858,12 @@ expressionIndex :: Parser ExpressionIndex
 expressionIndex = label "expressionIndex" $ lexeme $
   between (symbol "[") (symbol "]") $
     choice $ map try
-      [ InclusiveRange <$> exp <* symbol "..=" <*> exp
-      , ExclusiveRange <$> exp <* symbol ".." <*> exp
-      , OpenStartIncl <$ symbol "..=" <*> exp
-      , OpenStartExcl <$ symbol ".." <*> exp
-      , OpenEnd <$> exp <* symbol ".."
-      , SingleIndex <$> exp
+      [ InclusiveRange <$> litE <* symbol "..=" <*> litE
+      , ExclusiveRange <$> litE <* symbol ".." <*> litE
+      , OpenStartIncl <$ symbol "..=" <*> litE
+      , OpenStartExcl <$ symbol ".." <*> litE
+      , OpenEnd <$> litE <* symbol ".."
+      , SingleIndex <$> litE
       ]
 
 indexE :: Parser (Exp -> Exp)
@@ -863,10 +871,47 @@ indexE = label "indexE" $ lexeme $ do
   i <- expressionIndex
   return (`IndexE` i)
 
+filterE :: Parser (Exp -> Exp)
+filterE = label "filterE" $ lexeme $
+  betweenParens $ do
+    we <- ExpressionFilter . WhereE <$> where_
+    return (`FilterE` we)
+
+expressionAccessor :: Parser ExpressionAccessor
+expressionAccessor = label "expressionAccessor" $ lexeme $ do
+  choice [ betweenBrackets (MultiAccessor <$> sepBy (try appE <|> litE) (lexeme $ symbol ","))
+         , SingleAccessor . LitE . FieldL <$> field ]
+
+accessorE :: Parser (Exp -> Exp)
+accessorE = label "accessorE" $ lexeme $ do
+  _ <- symbol "."
+  ea <- expressionAccessor
+  return (`AccessorE` ea)
+
+memberCallE :: Parser (Exp -> Exp)
+memberCallE = label "memberCallE" $ lexeme $ do
+  _ <- symbol "."
+  f <- simpleField
+  call <- betweenParens
+    $ ExpressionMemberCall f <$> sepBy (closureE <|> try appE <|> litE) (lexeme $ char ',')
+  return (`MemberCallE` call)
+
+closureE :: Parser Exp
+closureE = label "closureE" $ lexeme $ do
+  _ <- char '|'
+  ps <- sepBy param (lexeme $ char ',')
+  _ <- char '|'
+  ClosureE . ClosureExpression ps <$> exp
+
 -- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
 operatorTable = [ [ E.Postfix typedExp
                   , E.Postfix indexE
+                  , E.Postfix filterE
+                  , E.Postfix memberCallE
+                  , E.Postfix accessorE
+                  , E.InfixL (symbol "->" $> OPE (:->))
+                  , E.InfixL (symbol "<-" $> OPE (:<-))
                   , E.InfixN (symbol "**" $> OPE (:**))
                   , E.InfixN (symbol "??" $> OPE (:??))
                   , E.InfixN (symbol "?:" $> OPE (:?:))
@@ -889,26 +934,26 @@ operatorTable = [ [ E.Postfix typedExp
                   , E.InfixN (symbol "<" $> OPE (:<))
                   , E.InfixN (symbol "=" $> OPE (:=))
                   , E.InfixN (symbol "~" $> OPE (:~))
-                  , E.InfixN (symbol "INSIDE" $> OPE INSIDE)
-                  , E.InfixN (symbol "NOTINSIDE" $> OPE NOTINSIDE)
-                  , E.InfixN (symbol "ALLINSIDE" $> OPE ALLINSIDE)
-                  , E.InfixN (symbol "ANYINSIDE" $> OPE ANYINSIDE)
-                  , E.InfixN (symbol "NONEINSIDE" $> OPE NONEINSIDE)
-                  , E.InfixN (symbol "IN" $> OPE IN)
-                  , E.InfixN (symbol "NOTIN" $> OPE NOTIN)
-                  , E.InfixN (symbol "CONTAINSNOT" $> OPE CONTAINSNOT)
-                  , E.InfixN (symbol "CONTAINSALL" $> OPE CONTAINSALL)
-                  , E.InfixN (symbol "CONTAINSANY" $> OPE CONTAINSANY)
-                  , E.InfixN (symbol "CONTAINSNONE" $> OPE CONTAINSNONE)
-                  , E.InfixN (symbol "CONTAINS" $> OPE CONTAINS)
-                  , E.InfixN (symbol "OUTSIDE" $> OPE OUTSIDE)
-                  , E.InfixN (symbol "INTERSECTS" $> OPE INTERSECTS)
+                  , E.InfixN (caseInsensitiveSymbol "INSIDE" $> OPE INSIDE)
+                  , E.InfixN (caseInsensitiveSymbol "NOTINSIDE" $> OPE NOTINSIDE)
+                  , E.InfixN (caseInsensitiveSymbol "ALLINSIDE" $> OPE ALLINSIDE)
+                  , E.InfixN (caseInsensitiveSymbol "ANYINSIDE" $> OPE ANYINSIDE)
+                  , E.InfixN (caseInsensitiveSymbol "NONEINSIDE" $> OPE NONEINSIDE)
+                  , E.InfixN (caseInsensitiveSymbol "IN" $> OPE IN)
+                  , E.InfixN (caseInsensitiveSymbol "NOTIN" $> OPE NOTIN)
+                  , E.InfixN (caseInsensitiveSymbol "CONTAINSNOT" $> OPE CONTAINSNOT)
+                  , E.InfixN (caseInsensitiveSymbol "CONTAINSALL" $> OPE CONTAINSALL)
+                  , E.InfixN (caseInsensitiveSymbol "CONTAINSANY" $> OPE CONTAINSANY)
+                  , E.InfixN (caseInsensitiveSymbol "CONTAINSNONE" $> OPE CONTAINSNONE)
+                  , E.InfixN (caseInsensitiveSymbol "CONTAINS" $> OPE CONTAINS)
+                  , E.InfixN (caseInsensitiveSymbol "OUTSIDE" $> OPE OUTSIDE)
+                  , E.InfixN (caseInsensitiveSymbol "INTERSECTS" $> OPE INTERSECTS)
                   , E.InfixN (symbol "@@" $> OPE (:@@))
                   ]
                 , [ E.InfixN (symbol "&&" $> OPE (:&&))
-                  , E.InfixN (symbol "AND" $> OPE (:&&))
+                  , E.InfixN (caseInsensitiveSymbol "AND" $> OPE (:&&))
                   , E.InfixN (symbol "||" $> OPE (:||))
-                  , E.InfixN (symbol "OR" $> OPE (:||))
+                  , E.InfixN (caseInsensitiveSymbol "OR" $> OPE (:||))
                   ]
                 ]
 
@@ -917,26 +962,28 @@ exp = E.makeExprParser term operatorTable
 
 term :: Parser Exp
 term = sc
-  >> lexeme (choice $ map try
-              [ ifThenElseE
-              , ifThenE
-              , selectE
-              , liveSelectE
-              , insertE
-              , createE
-              , updateE
-              , relateE
-              , deleteE
-              , returnE
-              , infoE
-              , WhereE <$> where_
-              , showChangesE
-              , appE
-              , edgeSelectorE
+  >> lexeme (choice $
+             [ try appE -- array::len(a)
+             , try ifThenElseE
+             , closureE
+             , ifThenE
+             , selectE
+             , liveSelectE
+             , insertE
+             , createE
+             , updateE
+             , relateE
+             , deleteE
+             , returnE
+             , infoE
+             , WhereE <$> where_
+             , showChangesE
+             ] <> map try
+              [ InParenE <$> betweenParens exp
               , litE
-              , InParenE <$> betweenParens exp
               , BlockE <$> between (lexeme $ char '{') (lexeme $ char '}') block
               , constE
+              , edgeSelectorE
               ])
 
 useNSDB :: Parser Statement
@@ -1093,19 +1140,98 @@ tablePermissions = label "tablePermissions" $ lexeme $ do
     , tablePermissionsFor
     ]
 
+ttRelIn :: Parser TTRelIn
+ttRelIn = label "ttRelIn" $ lexeme $ do
+  p <- caseInsensitiveSymbol "IN" <|> caseInsensitiveSymbol "FROM"
+  tns <- sepBy tableName (lexeme $ symbol "|")
+  case toLower p of
+    "in"   -> return $ TTRelIn tns
+    "from" -> return $ TTRelFrom tns
+    _      -> fail $ "invalid TTRelIn keyword: " <> p
+
+ttRelOut :: Parser TTRelOut
+ttRelOut = label "ttRelIn" $ lexeme $ do
+  p <- caseInsensitiveSymbol "TO" <|> caseInsensitiveSymbol "OUT"
+  tns <- sepBy tableName (lexeme $ symbol "|")
+  case toLower p of
+    "to"  -> return $ TTRelTo tns
+    "out" -> return $ TTRelOut tns
+    _     -> fail $ "invalid TTRelOut keyword: " <> p
+
+ttRelation :: Parser TableType
+ttRelation = label "ttRelation" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "RELATION"
+  mRelIn <- optional ttRelIn
+  mRelOut <- optional ttRelOut
+  TTRelation mRelIn mRelOut
+    <$> optional (caseInsensitiveSymbol "ENFORCED" $> TTRelEnforced)
+
+tableType :: Parser TableType
+tableType = label "tableType" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "TYPE"
+  choice
+    [ caseInsensitiveSymbol "ANY" $> TTAny
+    , caseInsensitiveSymbol "NORMAL" $> TTNormal
+    , ttRelation
+    ]
+
+changeFeed :: Parser ChangeFeed
+changeFeed = label "changeFeed" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "CHANGEFEED"
+  d <- durationParser
+  mIncludeOriginal <- optional
+    (caseInsensitiveSymbol "INCLUDE" >> caseInsensitiveSymbol "ORIGINAL")
+  case mIncludeOriginal of
+    Just _  -> return $ ChangeFeedIncludeOriginal d
+    Nothing -> return $ ChangeFeed d
+
 defTable :: Parser Define
 defTable = label "defTable" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "TABLE"
+  mDefOpt <- optional
+    $ (caseInsensitiveSymbol "OVERWRITE" $> Overwrite)
+    <|> (do
+            _ <- caseInsensitiveSymbol "IF"
+            _ <- caseInsensitiveSymbol "NOT"
+            _ <- caseInsensitiveSymbol "EXISTS"
+            pure IfNotExists)
   tn <- tableName
   mDrop <- optional $ caseInsensitiveSymbol "DROP" $> DROP
   st <- optional $ choice $ map try
     [ caseInsensitiveSymbol "SCHEMAFULL" $> SCHEMAFULL
     , caseInsensitiveSymbol "SCHEMALESS" $> SCHEMALESS
     ]
+  mTType <- optional tableType
   as <- optional $ caseInsensitiveSymbol "AS" >> maybeBetweenParens selectE
-  dur <- optional $ caseInsensitiveSymbol "CHANGEFEED" >> durationParser
-  DefTable tn mDrop st as dur <$> optional tablePermissions
+  mChangeFeed <- optional changeFeed
+  mTP <- optional tablePermissions
+  DefTable mDefOpt tn mDrop st mTType as mChangeFeed mTP
+    <$> optional (caseInsensitiveSymbol "COMMENT" >> CommentStr <$> quotedText)
+
+defFn :: Parser Define
+defFn = label "defFn" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFINE"
+  _ <- caseInsensitiveSymbol "FUNCTION"
+  mDefOpt <- optional
+    $ (caseInsensitiveSymbol "OVERWRITE" $> Overwrite)
+    <|> (do
+            _ <- caseInsensitiveSymbol "IF"
+            _ <- caseInsensitiveSymbol "NOT"
+            _ <- caseInsensitiveSymbol "EXISTS"
+            pure IfNotExists)
+  fnN <- fnName
+  params <- betweenParens (sepBy
+                           (do
+                              p <- param
+                              _ <- lexeme $ char ':'
+                              t <- dataType
+                              return (p, t)
+                           )
+                           (lexeme $ char ','))
+  blockE <- betweenBrackets block
+  mComment <- optional (caseInsensitiveSymbol "COMMENT" >> CommentStr <$> quotedText)
+  DefFn mDefOpt fnN params blockE mComment <$> optional tablePermissions
 
 defEvent :: Parser Define
 defEvent = label "defEvent" $ lexeme $ do
@@ -1142,8 +1268,8 @@ setT = label "setT" $ lexeme $ do
 recordT :: Parser DataType
 recordT = label "recordT" $ lexeme $ do
   _ <- caseInsensitiveSymbol "record"
-  tns <- (between (char '<') (char '>') (sepBy tableName (lexeme $ char '|')) <|>
-          betweenParens (sepBy tableName (lexeme $ char '|')))
+  tns <- between (char '<') (char '>') (sepBy tableName (lexeme $ char '|')) <|>
+          betweenParens (sepBy tableName (lexeme $ char '|'))
   return $ RecordT tns
 
 geometryType :: Parser GeometryType
@@ -1161,8 +1287,8 @@ geometryType = label "geometryType" $ lexeme $ choice $ map try
 geometryT :: Parser DataType
 geometryT = label "geometryT" $ lexeme $ do
   _ <- caseInsensitiveSymbol "geometry"
-  gts <- (between (char '<') (char '>') (sepBy geometryType (lexeme $ char '|')) <|>
-          betweenParens (sepBy geometryType (lexeme $ char '|')))
+  gts <- between (char '<') (char '>') (sepBy geometryType (lexeme $ char '|')) <|>
+          betweenParens (sepBy geometryType (lexeme $ char '|'))
   return $ GeometryT gts
 
 -- order matters here, more specific first, ie ** before *
@@ -1199,21 +1325,78 @@ fieldType = label "fieldType" $ lexeme $ do
   _ <- caseInsensitiveSymbol "TYPE"
   FieldType flex <$> dataType
 
+fieldDefOnDel :: Parser FieldDefOnDel
+fieldDefOnDel = label "fieldDefOnDel" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "ON"
+  _ <- caseInsensitiveSymbol "DELETE"
+  (caseInsensitiveSymbol "REJECT" $> OnDelReject)
+    <|> (caseInsensitiveSymbol "CASCADE" $> OnDelCascade)
+    <|> (caseInsensitiveSymbol "IGNORE" $> OnDelIgnore)
+    <|> (caseInsensitiveSymbol "UNSET" $> OnDelUnset)
+    <|> (do
+            _ <- caseInsensitiveSymbol "THEN"
+            OnDelThen <$> exp)
+
+fieldDefRef :: Parser FieldDefRef
+fieldDefRef = label "fieldDefRef" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "REFERENCE"
+  FieldDefRef <$> optional fieldDefOnDel
+
+defaultExp :: Parser DefaultExp
+defaultExp = label "defaultExp" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFAULT"
+  mAlways <- optional $ caseInsensitiveSymbol "ALWAYS"
+  case mAlways of
+    Just _  -> DefaultAlwaysExp <$> exp
+    Nothing -> DefaultExp <$> exp
+
 defField :: Parser Define
 defField = label "defField" $ lexeme $ do
   _ <- caseInsensitiveSymbol "DEFINE"
   _ <- caseInsensitiveSymbol "FIELD"
+  mDefOpt <- optional
+    $ (caseInsensitiveSymbol "OVERWRITE" $> Overwrite)
+    <|> (do
+            _ <- caseInsensitiveSymbol "IF"
+            _ <- caseInsensitiveSymbol "NOT"
+            _ <- caseInsensitiveSymbol "EXISTS"
+            pure IfNotExists)
   f <- field
   _ <- caseInsensitiveSymbol "ON"
   _ <- optional $ caseInsensitiveSymbol "TABLE"
   tn <- tableName
   ft <- optional fieldType
-  defaultE <- optional $ caseInsensitiveSymbol "DEFAULT" >> exp
+  mRef <- optional fieldDefRef
+  defaultE <- optional defaultExp
   valE <- optional $ caseInsensitiveSymbol "VALUE" >> exp
   readOnly <- optional $ caseInsensitiveSymbol "READONLY" $> READONLY
   assertE <- optional $ caseInsensitiveSymbol "ASSERT" >> exp
   tp <- optional tablePermissions
-  return $ DefField f tn ft defaultE valE readOnly assertE tp
+  DefField mDefOpt f tn ft mRef defaultE valE readOnly assertE tp
+    <$> optional (caseInsensitiveSymbol "COMMENT" >> CommentStr <$> quotedText)
+
+defComputedField :: Parser Define
+defComputedField = label "defComputedField" $ lexeme $ do
+  _ <- caseInsensitiveSymbol "DEFINE"
+  _ <- caseInsensitiveSymbol "FIELD"
+  mDefOpt <- optional
+    $ (caseInsensitiveSymbol "OVERWRITE" $> Overwrite)
+    <|> (do
+            _ <- caseInsensitiveSymbol "IF"
+            _ <- caseInsensitiveSymbol "NOT"
+            _ <- caseInsensitiveSymbol "EXISTS"
+            pure IfNotExists)
+  f <- field
+  _ <- caseInsensitiveSymbol "ON"
+  _ <- optional $ caseInsensitiveSymbol "TABLE"
+  tn <- tableName
+  computedExp <- (do
+                     _ <- caseInsensitiveSymbol "COMPUTED"
+                     ComputedExp <$> exp)
+  ft <- optional fieldType
+  tp <- optional tablePermissions
+  DefComputedField mDefOpt f tn computedExp ft tp
+    <$> optional (caseInsensitiveSymbol "COMMENT" >> CommentStr <$> quotedText)
 
 tokenizer :: Parser Tokenizer
 tokenizer = label "tokenizer" $ lexeme $ choice
@@ -1302,7 +1485,9 @@ defineS = label "defineS" $ lexeme $
     , defToken
     , defScope
     , defTable
+    , defFn
     , defEvent
+    , defComputedField
     , defField
     , defAnalyzer
     , defIndex
@@ -1316,7 +1501,7 @@ throwS = label "ThrowS" $ lexeme $ do
 killParam :: Parser KillParam
 killParam = label "killParam" $ lexeme $ do
   choice $ map try
-    [ KPUUID <$> quotedText
+    [ KPUUID <$> uuidParser
     , KPParam <$> param
     ]
 
@@ -1336,18 +1521,18 @@ removeParam = label "removeParam" $ lexeme $ do
   choice $ map try
     [ caseInsensitiveSymbol "NAMESPACE" >> (Namespace <$> identifier) <&> RMNS
     , caseInsensitiveSymbol "DATABASE" >> (Database <$> identifier) <&> RMDB
-    , caseInsensitiveSymbol "USER" >> RMUser <$> (UserName <$> identifier) <*> (caseInsensitiveSymbol "ON" >> userScope)
-    , caseInsensitiveSymbol "LOGIN" >> RMLogin <$> (LoginName <$> identifier) <*> (caseInsensitiveSymbol "ON" >> nsdbScope)
-    , caseInsensitiveSymbol "TOKEN" >> RMToken <$> (TokenName <$> identifier) <*> (caseInsensitiveSymbol "ON" >> nsdbScope)
-    , caseInsensitiveSymbol "SCOPE" >> RMScope <$> (ScopeName <$> identifier)
+    , caseInsensitiveSymbol "USER" >> (RMUser . UserName <$> identifier) <*> (caseInsensitiveSymbol "ON" >> userScope)
+    , caseInsensitiveSymbol "LOGIN" >> (RMLogin . LoginName <$> identifier) <*> (caseInsensitiveSymbol "ON" >> nsdbScope)
+    , caseInsensitiveSymbol "TOKEN" >> (RMToken . TokenName <$> identifier) <*> (caseInsensitiveSymbol "ON" >> nsdbScope)
+    , caseInsensitiveSymbol "SCOPE" >> (RMScope . ScopeName <$> identifier)
     , caseInsensitiveSymbol "TABLE" >> RMTable <$> tableName
-    , caseInsensitiveSymbol "EVENT" >> RMEvent <$> (EventName <$> identifier)
+    , caseInsensitiveSymbol "EVENT" >> (RMEvent . EventName <$> identifier)
       <*> (do
               _ <- caseInsensitiveSymbol "ON"
               _ <- optional $ caseInsensitiveSymbol "TABLE"
               tableName)
     , caseInsensitiveSymbol "FUNCTION" >> RMFN <$> fnName
-    , caseInsensitiveSymbol "FIELD" >> RMField <$> (FieldName <$> identifier)
+    , caseInsensitiveSymbol "FIELD" >> (RMField . FieldName <$> identifier)
       <*> (do
               _ <- caseInsensitiveSymbol "ON"
               _ <- optional $ caseInsensitiveSymbol "TABLE"
@@ -1373,7 +1558,8 @@ sleepS = label "sleepS" $ lexeme $ do
 statement :: Parser Statement
 statement =
   sc >> lexeme (choice $ map try
-                [ useS
+                [ InParenS <$> betweenParens statement
+                , useS
                 , letS
                 , caseInsensitiveSymbol "BEGIN"
                   >> optional (caseInsensitiveSymbol "TRANSACTION")
@@ -1397,13 +1583,13 @@ statement =
 expLine :: Parser SurQLLine
 expLine = lexeme $ do
   l <- ExpLine <$> exp
-  _ <- (void $ symbol ";") <|> (void $ lookAhead (symbol "}")) <|> lookAhead eof
+  _ <- void (symbol ";") <|> void (lookAhead (symbol "}")) <|> lookAhead eof
   return l
 
 statementLine :: Parser SurQLLine
 statementLine = lexeme $ do
   l <- StatementLine <$> statement
-  _ <- (void $ symbol ";") <|> (void $ lookAhead (symbol "}")) <|> lookAhead eof
+  _ <- void (symbol ";") <|> void (lookAhead (symbol "}")) <|> lookAhead eof
   return l
 
 surQLLine :: Parser SurQLLine

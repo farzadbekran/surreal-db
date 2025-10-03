@@ -14,6 +14,7 @@ import           Data.Char
 import           Data.Foldable     ( foldl1 )
 import qualified Data.Text         as T
 import           Data.Time.ISO8601 ( formatISO8601 )
+import           Data.UUID
 import           Data.Void
 import           Text.Megaparsec
 
@@ -76,11 +77,13 @@ newtype FNName
 instance ToQL FNName where
   toQL (FNName parts) = intercalate "::" (map toQL parts)
 
-data Operator = (:&&) | (:||) | (:??) | (:?:) | (:=) | (:!=) | (:==) | (:?=) | (:*=) | (:~) | (:!~) | (:?~) | (:*~) | (:<) | (:<=) | (:>) | (:>=) | (:+) | (:-) | (:*) | (:/) | (:**) | (:+=) | (:-=) | IN | NOTIN | CONTAINS | CONTAINSNOT | CONTAINSALL | CONTAINSANY | CONTAINSNONE | INSIDE | NOTINSIDE | ALLINSIDE | ANYINSIDE | NONEINSIDE | OUTSIDE | INTERSECTS | (:@@)
+data Operator = (:<-) | (:->) | (:&&) | (:||) | (:??) | (:?:) | (:=) | (:!=) | (:==) | (:?=) | (:*=) | (:~) | (:!~) | (:?~) | (:*~) | (:<) | (:<=) | (:>) | (:>=) | (:+) | (:-) | (:*) | (:/) | (:**) | (:+=) | (:-=) | IN | NOTIN | CONTAINS | CONTAINSNOT | CONTAINSALL | CONTAINSANY | CONTAINSNONE | INSIDE | NOTINSIDE | ALLINSIDE | ANYINSIDE | NONEINSIDE | OUTSIDE | INTERSECTS | (:@@)
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Operator where
   toQL = \case
+    (:->) -> "->"
+    (:<-) -> "<-"
     (:&&) -> "AND"
     (:||) -> "OR"
     (:??) -> "??"
@@ -181,7 +184,6 @@ type Max = Int64
 type K1 = Float
 type B = Float
 
-type DefaultExp = Exp
 type ValueExp = Exp
 type AssertExp = Exp
 type SignUpExp = Exp
@@ -189,6 +191,15 @@ type SignInExp = Exp
 type AsTableViewExp = Exp
 type WhenExp = Exp
 type ThenExp = Exp
+
+data DefaultExp
+  = DefaultExp !Exp
+  | DefaultAlwaysExp !Exp
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL DefaultExp where
+  toQL (DefaultExp e)       = "DEFAULT " <> toQL e
+  toQL (DefaultAlwaysExp e) = "DEFAULT ALWAYS " <> toQL e
 
 data TypeDef
   = T !String ![TypeDef]
@@ -201,13 +212,13 @@ data USE
   deriving (Eq, Generic, Ord, Read, Show)
 
 data Param
-  = SQLParam !ParamName
-  | InputParam !ParamName !TypeDef
+  = SQLParam !Field
+  | InputParam !Field !TypeDef
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Param where
-  toQL (SQLParam t)     = "$" <> toQL t
-  toQL (InputParam t _) = "$" <> toQL t
+  toQL (SQLParam f)     = "$" <> toQL f
+  toQL (InputParam f _) = "$" <> toQL f
 
 instance HasInput Param where
   getInputs (SQLParam _) = []
@@ -216,24 +227,22 @@ instance HasInput Param where
 data Field
   = WildCardField
   | SimpleField !FieldName -- ^ name
-  | IndexedField !Field ![Literal] -- ^ address[0]
-  | FilteredField !Field !WHERE -- ^ (address WHERE city = "New York")
-  | CompositeField !Field !Field -- ^ address.city
   | FieldParam !Param
+  | IncomingRefField !Field
+  | FieldWithPostFix !Field !Exp -- ^ field.id, field[1], field(where a == b) etc
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Field where
-  toQL WildCardField = "*"
-  toQL (SimpleField t) = toQL t
-  toQL (IndexedField t is) = toQL t <> prepText (concatMap (\i -> ["[", toQL i, "]"]) is)
-  toQL (FilteredField f w) = prepText ["(", toQL f, toQL w, ")"]
-  toQL (CompositeField f1 f2) = foldl1 (<>) [toQL f1, ".", toQL f2]
-  toQL (FieldParam p) = toQL p
+  toQL WildCardField           = "*"
+  toQL (SimpleField t)         = toQL t
+  toQL (FieldParam p)          = toQL p
+  toQL (IncomingRefField f)    = "<~" <> toQL f
+  toQL (FieldWithPostFix _f e) = toQL e -- f is repeated in e, so we ignore it here
 
 instance HasInput Field where
   getInputs = \case
-    FilteredField _ w -> getInputs w
     FieldParam p -> getInputs p
+    FieldWithPostFix _f e -> getInputs e -- f is repeated in e, so we ignore it here
     _otherwise -> []
 
 data Edge
@@ -267,7 +276,7 @@ instance ToQL Selector where
     SelectorAs s fAs ->
       prepText [ toQL s, "AS", toQL fAs ]
     EdgeSelector mf es f ->
-      foldl1 (<>) $ maybe "" toQL mf : map toQL es <> [" AS ", toQL f]
+      foldl1 (<>) $ toQL mf : map toQL es <> [" AS ", toQL f]
     TypedSelector s _ -> toQL s
 
 instance HasInput Selector where
@@ -578,7 +587,7 @@ instance ToQL RandFNName where
 
 data ID
   = TextID !Text
-  | UUIDID !Text
+  | UUIDID !UUID
   | NumID !Int64
   | ObjID !Object
   | TupID ![Exp]
@@ -589,7 +598,7 @@ data ID
 instance ToQL ID where
   toQL = \case
     TextID t -> "`" <> t <> "`"
-    UUIDID t -> "u'" <> t <> "'"
+    UUIDID t -> "u'" <> pack (toString t) <> "'"
     NumID i -> tshow i
     ObjID o -> toQL o
     TupID es -> prepText $ ["["] <> intersperse "," (map toQL es) <> ["]"]
@@ -628,6 +637,7 @@ data Literal
   | DateTimeL !UTCTime
   | DurationL !Duration
   | ObjectL !Object
+  | UUIDL !UUID
   | ArrayL ![Exp]
   | RecordIDL !RecordID
   | RecordIDRangeL !TableName !IDRange
@@ -663,6 +673,7 @@ instance ToQL Literal where
     ArrayL [] -> "[]"
     ArrayL es -> "[" <> foldl1 (<>) (intersperse "," (map toQL es)) <> "]"
     ObjectL o -> toQL o
+    UUIDL uuid -> "u'" <> pack (toString uuid) <> "'"
     RecordIDL i -> toQL i
     FutureL e -> "<future> {" <> toQL e <> "}"
     RegexL r -> "/" <> r <> "/"
@@ -727,23 +738,23 @@ instance HasInput InsertVal where
 data Target
   = TargetTable !TableName
   | TargetRecID !RecordID
-  | TargetEdge !RecordID ![Edge]
-  | TargetParam !Param
+  | TargetEdge !Target ![Edge]
+  | TargetField !Field
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Target where
   toQL (TargetTable tn)  = toQL tn
   toQL (TargetRecID rid) = toQL rid
-  toQL (TargetEdge rid es) =
-    foldl1 (<>) $ toQL rid : map toQL es
-  toQL (TargetParam p)  = toQL p
+  toQL (TargetEdge rid e) =
+    foldl1 (<>) $ toQL rid : map toQL e
+  toQL (TargetField f)  = toQL f
 
 instance HasInput Target where
   getInputs = \case
     TargetTable _ -> []
     TargetRecID rid -> getInputs rid
-    TargetEdge rid es -> getInputs rid <> concatMap getInputs es
-    TargetParam p -> getInputs p
+    TargetEdge rid e -> getInputs rid <> concatMap getInputs e
+    TargetField f -> getInputs f
 
 data CreateVal
   = CreateObject !Exp
@@ -803,16 +814,16 @@ instance ToQL ReturnType where
     RTDiff -> "RETURN DIFF"
     RTProjections (Selectors ss) -> "RETURN " <> prepText (intersperse "," $ map toQL ss)
 
-data RelateTarget
-  = RelateTarget !RecordID !TableName !RecordID
+newtype RelateTarget
+  = RelateTarget Exp
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL RelateTarget where
-  toQL (RelateTarget rid1 tn rid2)
-    = toQL rid1 <> "->" <> toQL tn <> "->" <> toQL rid2
+  toQL (RelateTarget e)
+    = toQL e
 
 instance HasInput RelateTarget where
-  getInputs (RelateTarget rid1 _ rid2) = getInputs rid1 <> getInputs rid2
+  getInputs (RelateTarget e) = getInputs e
 
 data DIFF = DIFF
   deriving (Eq, Generic, Ord, Read, Show)
@@ -866,15 +877,80 @@ instance HasInput ExpressionIndex where
     OpenStartExcl e      -> getInputs e
     OpenEnd s            -> getInputs s
 
+newtype ExpressionFilter
+  = ExpressionFilter Exp
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL ExpressionFilter where
+  toQL (ExpressionFilter we) = "(" <> toQL we <> ")"
+
+instance HasInput ExpressionFilter where
+  getInputs (ExpressionFilter we) = getInputs we
+
+data ExpressionAccessor
+  = SingleAccessor !Exp
+  | MultiAccessor ![Exp]
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL ExpressionAccessor where
+  toQL (SingleAccessor a) = "." <> toQL a
+  toQL (MultiAccessor as) = ".{" <> intercalate "," (map toQL as) <> "}"
+
+instance HasInput ExpressionAccessor where
+  getInputs (SingleAccessor a) = getInputs a
+  getInputs (MultiAccessor as) = concatMap getInputs as
+
+data ExpressionMemberCall
+  = ExpressionMemberCall !Field ![Exp]
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL ExpressionMemberCall where
+  toQL (ExpressionMemberCall f es) = "." <> toQL f <> "(" <> intercalate "," (map toQL es) <> ")"
+
+instance HasInput ExpressionMemberCall where
+  getInputs (ExpressionMemberCall f es) = getInputs f <> concatMap getInputs es
+
+data ClosureExpression
+  = ClosureExpression ![Param] !Exp
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL ClosureExpression where
+  toQL (ClosureExpression ps e) = "| " <> intercalate "," (map toQL ps) <> " |" <> toQL e
+
+instance HasInput ClosureExpression where
+  getInputs (ClosureExpression ps e) = concatMap getInputs ps <> getInputs e
+
+data END = END
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL END where
+  toQL _ = "END"
+
+data THEN = THEN
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL THEN where
+  toQL _ = "THEN"
+
+data ELSE = ELSE
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL ELSE where
+  toQL _ = "ELSE"
+
 data Exp
   = TypedE !Exp !TypeDef
   | OPE !Operator !Exp !Exp
   | AppE !FNName ![Exp]
   | IndexE !Exp !ExpressionIndex
+  | FilterE !Exp !ExpressionFilter
+  | AccessorE !Exp !ExpressionAccessor
+  | MemberCallE !Exp !ExpressionMemberCall
+  | ClosureE !ClosureExpression
   | LitE !Literal
   | ConstE !Identifier
-  | IfThenE !Exp !Exp
-  | IfThenElseE !Exp !Exp !Exp
+  | IfThenE !Exp !(Maybe THEN) !Exp !(Maybe END)
+  | IfThenElseE !Exp !(Maybe THEN) !Exp !(Maybe ELSE) !Exp !(Maybe END)
   | EdgeSelectorE !(Maybe Field) ![Edge]
   | SelectE !(Maybe VALUE) !Selectors !(Maybe OMIT) !FROM !(Maybe WHERE) !(Maybe SPLIT) !(Maybe GROUP) !(Maybe ORDER) !(Maybe LIMIT) !(Maybe START) !(Maybe FETCH) !(Maybe TIMEOUT) !(Maybe PARALLEL) !(Maybe EXPLAIN)
   | LiveSelectE !(Maybe VALUE) !(Either DIFF Selectors) !FROM !(Maybe WHERE) !(Maybe FETCH)
@@ -897,16 +973,27 @@ instance ToQL Exp where
     OPE op e1 e2 -> prepText [toQL e1, toQL op, toQL e2]
     AppE fn ps -> prepText $ [toQL fn <> "("] <> intersperse ", " (map toQL ps) <> [")"]
     IndexE e idx -> toQL e <> toQL idx
+    AccessorE e1 e2 -> toQL e1 <> toQL e2
+    MemberCallE e call -> toQL e <> toQL call
+    ClosureE ce -> toQL ce
+    FilterE e f -> toQL e <> toQL f
     LitE le -> toQL le
     ConstE i -> toQL i
-    IfThenE e te -> prepText [ "IF", toQL e
-                             , toQL te
-                             ]
-    IfThenElseE e te fe -> prepText [ "IF", toQL e
-                                    , toQL te
-                                    , "ELSE", toQL fe
-                                    ]
-    EdgeSelectorE mf es -> foldl1 (<>) $ maybe "" toQL mf : map toQL es
+    IfThenE e mThen te mEnd -> prepText [ "IF"
+                                  , toQL e
+                                  , toQL mThen
+                                  , toQL te
+                                  , toQL mEnd
+                                  ]
+    IfThenElseE e mThen te mElse fe mEnd -> prepText [ "IF"
+                                         , toQL e
+                                         , toQL mThen
+                                         , toQL te
+                                         , toQL mElse
+                                         , toQL fe
+                                         , toQL mEnd
+                                         ]
+    EdgeSelectorE mf es -> foldl1 (<>) $ toQL mf : map toQL es
     SelectE mValue selectors mOmit from mWhere mSplit mGroup mOrder mLimit mStart mFetch mTimeout mParallel mExplain ->
       prepText [ "SELECT"
                , toQL mValue
@@ -995,10 +1082,14 @@ instance HasInput Exp where
     OPE _ e1 e2 -> getInputs e1 <> getInputs e2
     AppE _ ps -> concatMap getInputs ps
     IndexE e idx -> getInputs e <> getInputs idx
+    FilterE e f -> getInputs e <> getInputs f
+    AccessorE e1 e2 -> getInputs e1 <> getInputs e2
+    MemberCallE e call -> getInputs e <> getInputs call
+    ClosureE ce -> getInputs ce
     LitE le -> getInputs le
     ConstE _ -> []
-    IfThenE e te -> getInputs e <> getInputs te
-    IfThenElseE e te fe -> getInputs e <> getInputs te <> getInputs fe
+    IfThenE e _ te _ -> getInputs e <> getInputs te
+    IfThenElseE e _ te _ fe _ -> getInputs e <> getInputs te <> getInputs fe
     EdgeSelectorE mf es -> maybe [] getInputs mf <> concatMap getInputs es
     SelectE _ selectors _ from mWhere mSplit mGroup mOrder mLimit mStart mFetch _ _ _
       -> getInputs selectors
@@ -1119,6 +1210,50 @@ instance ToQL SchemaType where
   toQL = \case
     SCHEMAFULL -> "SCHEMAFULL"
     SCHEMALESS -> "SCHEMALESS"
+
+data TTRelIn
+  = TTRelIn ![TableName]
+  | TTRelFrom ![TableName]
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL TTRelIn where
+  toQL = \case
+    TTRelIn tns -> prepText $ "IN" : intersperse "|" (map toQL tns)
+    TTRelFrom tns -> prepText $ "FROM" : intersperse "|" (map toQL tns)
+
+data TTRelOut
+  = TTRelOut ![TableName]
+  | TTRelTo ![TableName]
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL TTRelOut where
+  toQL = \case
+    TTRelOut tns -> prepText $ "OUT" : intersperse "|" (map toQL tns)
+    TTRelTo tns -> prepText $ "TO" : intersperse "|" (map toQL tns)
+
+data TTRelEnforced = TTRelEnforced
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL TTRelEnforced where
+  toQL _ = "ENFORCED"
+
+data TableType
+  = TTAny
+  | TTNormal
+  | TTRelation !(Maybe TTRelIn) !(Maybe TTRelOut) !(Maybe TTRelEnforced)
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL TableType where
+  toQL tt = "TYPE " <> case tt of
+    TTAny -> "ANY"
+    TTNormal -> "NORMAL"
+    TTRelation mRelIn mRelOut mEnforced ->
+      prepText
+      [ "RELATION"
+      , toQL mRelIn
+      , toQL mRelOut
+      , toQL mEnforced
+      ]
 
 data TablePermissions
   = TPNONE
@@ -1275,17 +1410,71 @@ data READONLY = READONLY
 instance ToQL READONLY where
   toQL _ = "READONLY"
 
+data DefType = Overwrite | IfNotExists
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL DefType where
+  toQL Overwrite   = "OVERWRITE"
+  toQL IfNotExists = "IF NOT EXISTS"
+
+data FieldDefOnDel
+  = OnDelReject
+  | OnDelCascade
+  | OnDelIgnore
+  | OnDelUnset
+  | OnDelThen !Exp
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL FieldDefOnDel where
+  toQL OnDelReject   = "ON DELETE REJECT"
+  toQL OnDelCascade  = "ON DELETE CASCADE"
+  toQL OnDelIgnore   = "ON DELETE IGNORE"
+  toQL OnDelUnset    = "ON DELETE UNSET"
+  toQL (OnDelThen e) = "ON DELETE THEN " <> toQL e
+
+newtype FieldDefRef
+  = FieldDefRef (Maybe FieldDefOnDel)
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL FieldDefRef where
+  toQL (FieldDefRef mOnDel) = "REFERENCE " <> toQL mOnDel
+
+newtype ComputedExp
+  = ComputedExp Exp
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL ComputedExp where
+  toQL (ComputedExp e) = "COMPUTED " <> toQL e
+
+newtype CommentStr
+  = CommentStr Text
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL CommentStr where
+  toQL (CommentStr s) = "COMMENT \"" <> s <> "\""
+
+data ChangeFeed
+  = ChangeFeed !Duration
+  | ChangeFeedIncludeOriginal !Duration
+  deriving (Eq, Generic, Ord, Read, Show)
+
+instance ToQL ChangeFeed where
+  toQL (ChangeFeed d) = "CHANGEFEED " <> toQL d
+  toQL (ChangeFeedIncludeOriginal d) = "CHANGEFEED " <> toQL d <> " INCLUDE ORIGINAL"
+
 data Define
   = DefNamespace !Namespace
   | DefDatabase !Database
   | DefUser !UserName !UserScope !(Maybe UserPassword) !(Maybe [UserRole])
   | DefToken !TokenName !TokenScope !TokenType !TokenValue
   | DefScope !ScopeName !(Maybe Duration) !(Maybe SignUpExp) !(Maybe SignInExp)
-  | DefTable !TableName !(Maybe DROP) !(Maybe SchemaType) !(Maybe AsTableViewExp) !(Maybe Duration) !(Maybe TablePermissions)
+  | DefTable !(Maybe DefType) !TableName !(Maybe DROP) !(Maybe SchemaType) !(Maybe TableType) !(Maybe AsTableViewExp) !(Maybe ChangeFeed) !(Maybe TablePermissions) !(Maybe CommentStr)
   | DefEvent !EventName !TableName !(Maybe WhenExp) !ThenExp
-  | DefField !Field !TableName !(Maybe FieldType) !(Maybe DefaultExp) !(Maybe ValueExp) !(Maybe READONLY) !(Maybe AssertExp) !(Maybe TablePermissions)
+  | DefField !(Maybe DefType) !Field !TableName !(Maybe FieldType) !(Maybe FieldDefRef) !(Maybe DefaultExp) !(Maybe ValueExp) !(Maybe READONLY) !(Maybe AssertExp) !(Maybe TablePermissions) !(Maybe CommentStr)
+  | DefComputedField !(Maybe DefType) !Field !TableName !ComputedExp !(Maybe FieldType) !(Maybe TablePermissions) !(Maybe CommentStr)
   | DefAnalyzer !AnalyzerName !(Maybe [Tokenizer]) !(Maybe [Filter])
   | DefIndex !IndexName !TableName ![Field] !(Maybe (Either UNIQUE SearchAnalyzer))
+  | DefFn !(Maybe DefType) !FNName ![(Param, DataType)] !Block !(Maybe CommentStr) !(Maybe TablePermissions)
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Define where
@@ -1324,19 +1513,20 @@ instance ToQL Define where
              Just signIn -> "SIGNIN " <> toQL signIn
              Nothing     -> ""
          ]
-    DefTable tn mDrop mSchema mExp mDur mPerms
+    DefTable mDefOpt tn mDrop mSchema mTType mExp mChangeFeed mPerms mComment
       -> prepText
          [ "DEFINE TABLE"
+         , toQL mDefOpt
          , toQL tn
          , toQL mDrop
          , toQL mSchema
+         , toQL mTType
          , case mExp of
              Just e  -> "AS (" <> toQL e <> ")"
              Nothing -> ""
-         , case mDur of
-             Just dur -> "CHANGEFEED " <> toQL dur
-             Nothing  -> ""
+         , toQL mChangeFeed
          , toQL mPerms
+         , toQL mComment
          ]
     DefEvent en tn mWhen thenE
       -> prepText
@@ -1350,16 +1540,16 @@ instance ToQL Define where
          , "THEN"
          , toQL thenE
          ]
-    DefField f tn mFieldType mDefExp mValExp mReadOnly mAssertExp mPermissions
+    DefField mDefType f tn mFieldType mRef mDefExp mValExp mReadOnly mAssertExp mPermissions mComment
       -> prepText
          [ "DEFINE FIELD"
+         , toQL mDefType
          , toQL f
          , "ON TABLE"
          , toQL tn
          , toQL mFieldType
-         , case mDefExp of
-             Just e  -> "DEFAULT " <> toQL e
-             Nothing -> ""
+         , toQL mRef
+         , toQL mDefExp
          , case mValExp of
              Just e  -> "VALUE " <> toQL e
              Nothing -> ""
@@ -1370,6 +1560,19 @@ instance ToQL Define where
              Just e  -> "ASSERT " <> toQL e
              Nothing -> ""
          , toQL mPermissions
+         , toQL mComment
+         ]
+    DefComputedField mDefType f tn computed mFieldType mPermissions mComment
+      -> prepText
+         [ "DEFINE FIELD"
+         , toQL mDefType
+         , toQL f
+         , "ON TABLE"
+         , toQL tn
+         , toQL computed
+         , toQL mFieldType
+         , toQL mPermissions
+         , toQL mComment
          ]
     DefAnalyzer an mTokenizers mFilters
       -> prepText
@@ -1394,6 +1597,16 @@ instance ToQL Define where
              Just (Right sa) -> toQL sa
              Just (Left u)   -> toQL u
              Nothing         -> ""
+         ]
+    DefFn mDefType fnName params block mComment mPermissions
+      -> prepText
+         [ "DEFINE FUNCTION"
+         , toQL mDefType
+         , toQL fnName
+         , "(" <> concatMap (\(n,t) -> toQL n <> " : " <> toQL t) params <> ")"
+         , "{ " <> toQL block <> "}"
+         , toQL mComment
+         , toQL mPermissions
          ]
 
 data Remove
@@ -1427,13 +1640,13 @@ instance ToQL Remove where
     RMParam p -> "PARAM " <> toQL p
 
 data KillParam
-  = KPUUID !Text
+  = KPUUID !UUID
   | KPParam !Param
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL KillParam where
   toQL = \case
-    KPUUID t -> "\"" <> t <> "\""
+    KPUUID t -> "u'" <> pack (toString t) <> "'"
     KPParam p -> toQL p
 
 instance HasInput KillParam where
@@ -1455,6 +1668,7 @@ data Statement
   | ThrowS !Exp
   | KillS !KillParam
   | SleepS !Duration
+  | InParenS !Statement
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Statement where
@@ -1475,6 +1689,7 @@ instance ToQL Statement where
     KillS kp -> "KILL " <> toQL kp
     RemoveS r -> "REMOVE " <> toQL r
     SleepS d -> "SLEEP " <> toQL d
+    InParenS s -> "(" <> toQL s <> ")"
 
 instance HasInput Statement where
   getInputs = \case
