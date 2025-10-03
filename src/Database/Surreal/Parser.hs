@@ -12,7 +12,7 @@ import           ClassyPrelude                  hiding ( bool, exp, group,
 import qualified Control.Monad.Combinators.Expr as E
 import           Control.Monad.Fail             ( MonadFail (..) )
 import           Data.Char                      ( isAlphaNum )
-import           Data.Foldable                  ( foldl )
+import           Data.Foldable                  ( Foldable (foldl1), foldl )
 import           Data.Time.ISO8601              ( parseISO8601 )
 import qualified Data.UUID                      as UUID
 import           Data.Void
@@ -339,14 +339,17 @@ incomingRefField = label "incomingRefField"
 fieldWithPostFix :: Parser Field
 fieldWithPostFix = label "SimpleField" $ lexeme $ do
   f <- choice [simpleField, fieldParam]
-  e <- choice [indexE, filterE, try memberCallE, accessorE]
-  return $ FieldWithPostFix f (e $ LitE $ FieldL f)
+  postFixes <- some (filterE
+                     <|> indexE
+                     <|> try (char '.' >> accessorE)
+                     <|> try (char '.' >> (LitE . FieldL <$> field)))
+  return $ FieldWithPostFix f postFixes
 
 field :: Parser Field
-field = label "field" $ lexeme $ choice $ map try
+field = label "field" $ lexeme $ choice
   [ wildCardField
   , incomingRefField
-  , fieldWithPostFix
+  , try fieldWithPostFix
   , fieldParam
   , simpleField
   ]
@@ -388,7 +391,7 @@ ifThenE = label "IfThenE" $ lexeme $ do
   _ <- caseInsensitiveSymbol "IF"
   e1 <- exp
   mThen <- optional (caseInsensitiveSymbol "THEN" $> THEN)
-  IfThenE e1 mThen <$> exp <*> (optional $ caseInsensitiveSymbol "END" $> END)
+  IfThenE e1 mThen <$> exp <*> optional (caseInsensitiveSymbol "END" $> END)
 
 ifThenElseE :: Parser Exp
 ifThenElseE = label "IfThenElseE" $ lexeme $ do
@@ -866,35 +869,30 @@ expressionIndex = label "expressionIndex" $ lexeme $
       , SingleIndex <$> litE
       ]
 
-indexE :: Parser (Exp -> Exp)
-indexE = label "indexE" $ lexeme $ do
-  i <- expressionIndex
-  return (`IndexE` i)
+indexE :: Parser Exp
+indexE = label "indexE" $ lexeme (IndexE <$> expressionIndex)
 
-filterE :: Parser (Exp -> Exp)
+filterE :: Parser Exp
 filterE = label "filterE" $ lexeme $
   betweenParens $ do
     we <- ExpressionFilter . WhereE <$> where_
-    return (`FilterE` we)
+    return (FilterE we)
 
 expressionAccessor :: Parser ExpressionAccessor
 expressionAccessor = label "expressionAccessor" $ lexeme $ do
-  choice [ betweenBrackets (MultiAccessor <$> sepBy (try appE <|> litE) (lexeme $ symbol ","))
-         , SingleAccessor . LitE . FieldL <$> field ]
+  betweenBrackets
+    (MultiAccessor <$> sepBy (try appE <|> litE) (lexeme $ symbol ","))
 
-accessorE :: Parser (Exp -> Exp)
+accessorE :: Parser Exp
 accessorE = label "accessorE" $ lexeme $ do
-  _ <- symbol "."
-  ea <- expressionAccessor
-  return (`AccessorE` ea)
+  AccessorE <$> expressionAccessor
 
-memberCallE :: Parser (Exp -> Exp)
+memberCallE :: Parser Exp
 memberCallE = label "memberCallE" $ lexeme $ do
-  _ <- symbol "."
   f <- simpleField
   call <- betweenParens
     $ ExpressionMemberCall f <$> sepBy (closureE <|> try appE <|> litE) (lexeme $ char ',')
-  return (`MemberCallE` call)
+  return (MemberCallE call)
 
 closureE :: Parser Exp
 closureE = label "closureE" $ lexeme $ do
@@ -903,13 +901,18 @@ closureE = label "closureE" $ lexeme $ do
   _ <- char '|'
   ClosureE . ClosureExpression ps <$> exp
 
+expWithPostfixes :: Parser (Exp -> Exp)
+expWithPostfixes = label "expWithPostfixes" $ lexeme $ do
+  postFixes <- some (filterE <|> indexE)
+  if null postFixes
+    then fail "need atleast one postfix"
+    else return (\e -> foldl1 ExpWithPostfix (e : postFixes))
+
 -- order matters here, more specific first, ie ** before *
 operatorTable :: [[E.Operator Parser Exp]]
 operatorTable = [ [ E.Postfix typedExp
-                  , E.Postfix indexE
-                  , E.Postfix filterE
-                  , E.Postfix memberCallE
-                  , E.Postfix accessorE
+                  , E.Postfix expWithPostfixes
+                  , E.InfixL (symbol "." $> OPE (:.))
                   , E.InfixL (symbol "->" $> OPE (:->))
                   , E.InfixL (symbol "<-" $> OPE (:<-))
                   , E.InfixN (symbol "**" $> OPE (:**))
@@ -980,8 +983,11 @@ term = sc
              , showChangesE
              ] <> map try
               [ InParenE <$> betweenParens exp
+              , BlockE <$> between (lexeme $ char '{') (lexeme $ char '}')
+                  block
+              , memberCallE
               , litE
-              , BlockE <$> between (lexeme $ char '{') (lexeme $ char '}') block
+              , accessorE
               , constE
               , edgeSelectorE
               ])
