@@ -299,9 +299,13 @@ defineTest1 = do
                 } end;
                 return "test";
             };
+            (field1(where id >= 0)[1111].test[0].somefn($p1, %p3 :: (Text))) :: ();
             return NONE :: ();
             |]
-  query (#p .== ("my val" :: Text) .+ #p2 .== ("my val 2" :: Text)) q >>= print
+  query (#p .== ("my val" :: Text)
+         .+ #p2 .== ("my val 2" :: Text)
+         .+ #p3 .== ("my val 3" :: Text)
+        ) q >>= print
 
 inputTest :: Eff AppEffs ()
 inputTest = do

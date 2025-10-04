@@ -77,11 +77,12 @@ newtype FNName
 instance ToQL FNName where
   toQL (FNName parts) = intercalate "::" (map toQL parts)
 
-data Operator = (:<-) | (:->) | (:&&) | (:||) | (:??) | (:?:) | (:=) | (:!=) | (:==) | (:?=) | (:*=) | (:~) | (:!~) | (:?~) | (:*~) | (:<) | (:<=) | (:>) | (:>=) | (:+) | (:-) | (:*) | (:/) | (:**) | (:+=) | (:-=) | IN | NOTIN | CONTAINS | CONTAINSNOT | CONTAINSALL | CONTAINSANY | CONTAINSNONE | INSIDE | NOTINSIDE | ALLINSIDE | ANYINSIDE | NONEINSIDE | OUTSIDE | INTERSECTS | (:@@)
+data Operator = (:.) | (:<-) | (:->) | (:&&) | (:||) | (:??) | (:?:) | (:=) | (:!=) | (:==) | (:?=) | (:*=) | (:~) | (:!~) | (:?~) | (:*~) | (:<) | (:<=) | (:>) | (:>=) | (:+) | (:-) | (:*) | (:/) | (:**) | (:+=) | (:-=) | IN | NOTIN | CONTAINS | CONTAINSNOT | CONTAINSALL | CONTAINSANY | CONTAINSNONE | INSIDE | NOTINSIDE | ALLINSIDE | ANYINSIDE | NONEINSIDE | OUTSIDE | INTERSECTS | (:@@)
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Operator where
   toQL = \case
+    (:.) -> "."
     (:->) -> "->"
     (:<-) -> "<-"
     (:&&) -> "AND"
@@ -229,7 +230,7 @@ data Field
   | SimpleField !FieldName -- ^ name
   | FieldParam !Param
   | IncomingRefField !Field
-  | FieldWithPostFix !Field !Exp -- ^ field.id, field[1], field(where a == b) etc
+  | FieldWithPostFix !Field ![Exp] -- ^ field.id, field[1], field(where a == b) etc
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL Field where
@@ -237,12 +238,17 @@ instance ToQL Field where
   toQL (SimpleField t)         = toQL t
   toQL (FieldParam p)          = toQL p
   toQL (IncomingRefField f)    = "<~" <> toQL f
-  toQL (FieldWithPostFix _f e) = toQL e -- f is repeated in e, so we ignore it here
+  toQL (FieldWithPostFix f es) = toQL f
+    <> concatMap (\case
+                     (LitE (FieldL e)) -> "." <> toQL e
+                     (AccessorE e) -> "." <> toQL e
+                     e -> toQL e
+                 ) es
 
 instance HasInput Field where
   getInputs = \case
     FieldParam p -> getInputs p
-    FieldWithPostFix _f e -> getInputs e -- f is repeated in e, so we ignore it here
+    FieldWithPostFix f es -> getInputs f <> concatMap getInputs es
     _otherwise -> []
 
 data Edge
@@ -887,17 +893,14 @@ instance ToQL ExpressionFilter where
 instance HasInput ExpressionFilter where
   getInputs (ExpressionFilter we) = getInputs we
 
-data ExpressionAccessor
-  = SingleAccessor !Exp
-  | MultiAccessor ![Exp]
+newtype ExpressionAccessor
+  = MultiAccessor [Exp]
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL ExpressionAccessor where
-  toQL (SingleAccessor a) = "." <> toQL a
-  toQL (MultiAccessor as) = ".{" <> intercalate "," (map toQL as) <> "}"
+  toQL (MultiAccessor as) = "{" <> intercalate "," (map toQL as) <> "}"
 
 instance HasInput ExpressionAccessor where
-  getInputs (SingleAccessor a) = getInputs a
   getInputs (MultiAccessor as) = concatMap getInputs as
 
 data ExpressionMemberCall
@@ -905,7 +908,7 @@ data ExpressionMemberCall
   deriving (Eq, Generic, Ord, Read, Show)
 
 instance ToQL ExpressionMemberCall where
-  toQL (ExpressionMemberCall f es) = "." <> toQL f <> "(" <> intercalate "," (map toQL es) <> ")"
+  toQL (ExpressionMemberCall f es) = toQL f <> "(" <> intercalate "," (map toQL es) <> ")"
 
 instance HasInput ExpressionMemberCall where
   getInputs (ExpressionMemberCall f es) = getInputs f <> concatMap getInputs es
@@ -942,10 +945,11 @@ data Exp
   = TypedE !Exp !TypeDef
   | OPE !Operator !Exp !Exp
   | AppE !FNName ![Exp]
-  | IndexE !Exp !ExpressionIndex
-  | FilterE !Exp !ExpressionFilter
-  | AccessorE !Exp !ExpressionAccessor
-  | MemberCallE !Exp !ExpressionMemberCall
+  | IndexE !ExpressionIndex
+  | FilterE !ExpressionFilter
+  | AccessorE !ExpressionAccessor
+  | MemberCallE !ExpressionMemberCall
+  | ExpWithPostfix !Exp !Exp
   | ClosureE !ClosureExpression
   | LitE !Literal
   | ConstE !Identifier
@@ -970,13 +974,15 @@ data Exp
 instance ToQL Exp where
   toQL = \case
     TypedE e _ -> toQL e
+    ExpWithPostfix e1 e2 -> toQL e1 <> toQL e2
+    OPE (:.) e1 e2 -> toQL e1 <> "." <> toQL e2
     OPE op e1 e2 -> prepText [toQL e1, toQL op, toQL e2]
     AppE fn ps -> prepText $ [toQL fn <> "("] <> intersperse ", " (map toQL ps) <> [")"]
-    IndexE e idx -> toQL e <> toQL idx
-    AccessorE e1 e2 -> toQL e1 <> toQL e2
-    MemberCallE e call -> toQL e <> toQL call
+    IndexE idx -> toQL idx
+    AccessorE e2 -> toQL e2
+    MemberCallE call -> toQL call
     ClosureE ce -> toQL ce
-    FilterE e f -> toQL e <> toQL f
+    FilterE f -> toQL f
     LitE le -> toQL le
     ConstE i -> toQL i
     IfThenE e mThen te mEnd -> prepText [ "IF"
@@ -1079,12 +1085,13 @@ instance ToQL Exp where
 instance HasInput Exp where
   getInputs = \case
     TypedE e _ -> getInputs e
+    ExpWithPostfix e1 e2 -> getInputs e1 <> getInputs e2
     OPE _ e1 e2 -> getInputs e1 <> getInputs e2
     AppE _ ps -> concatMap getInputs ps
-    IndexE e idx -> getInputs e <> getInputs idx
-    FilterE e f -> getInputs e <> getInputs f
-    AccessorE e1 e2 -> getInputs e1 <> getInputs e2
-    MemberCallE e call -> getInputs e <> getInputs call
+    IndexE idx -> getInputs idx
+    FilterE f -> getInputs f
+    AccessorE e2 -> getInputs e2
+    MemberCallE call -> getInputs call
     ClosureE ce -> getInputs ce
     LitE le -> getInputs le
     ConstE _ -> []
