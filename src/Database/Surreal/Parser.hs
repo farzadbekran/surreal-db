@@ -177,7 +177,9 @@ textID :: Parser ID
 textID = label "TextID" $ lexeme $ do
   t <- pack <$> between (char '`') (char '`') (takeWhileP Nothing (/= '`'))
        <|> pack <$> between (char '⟨') (char '⟩') (takeWhileP Nothing (/= '⟩'))
-       <|> pack <$> some alphaNumChar
+       <|> pack <$> (some (alphaNumChar
+                           <|> try (char '-' <* notFollowedBy (char '>'))
+                           <|> (char '_')))
   return $ TextID t
 
 numID :: Parser ID
@@ -200,7 +202,8 @@ objectField = label "objectField" $ lexeme $ do
 
 object_ :: Parser Object
 object_ = label "Object" $ lexeme $ do
-  fields <- between (lexeme $ char '{') (lexeme $ char '}') $ sepBy objectField (lexeme $ char ',')
+  fields <- between (lexeme $ char '{') (lexeme $ char '}')
+    $ sepBy objectField (lexeme $ char ',')
   return $ Object fields
 
 tupID :: Parser ID
@@ -232,7 +235,7 @@ id_ = label "ID" $ choice $ map try
 normalRecordID :: Parser RecordID
 normalRecordID = label "normalRecordID" $ lexeme $ do
   tn <- tableName
-  _ <- symbol ":"
+  _ <- char ':'
   RecordID tn <$> id_
 
 recordIDParam :: Parser RecordID
@@ -277,7 +280,7 @@ idRange = label "IDRange" $ lexeme $ choice $ map try
 recordIDRangeL :: Parser Literal
 recordIDRangeL = label "recordIDRageL" $ lexeme $ do
   tn <- tableName
-  _ <- string ":"
+  _ <- char ':'
   RecordIDRangeL tn <$> idRange
 
 objectL :: Parser Literal
